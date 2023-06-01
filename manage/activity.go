@@ -18,3 +18,11 @@ func HandleActivityTick(c *gin.Context, manager timeout.InactivityIdleManager, w
 	c.Writer.WriteHeader(http.StatusOK)
 	return
 }
+
+func HandleShow(c *gin.Context, manager timeout.InactivityIdleManager) {
+	str := manager.Show()
+	c.JSON(http.StatusOK, gin.H{
+		"str": str,
+	})
+	return
+}

@@ -101,6 +101,10 @@ func main() {
 			wid := repo.GetWorkspaceByTask(tid).ID
 			manage.HandleActivityTick(c, activityManager, wid)
 		})
+
+		w3.GET("/idle-manager", func(c *gin.Context) {
+			manage.HandleShow(c, activityManager)
+		})
 	}
 
 	// test url

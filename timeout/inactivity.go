@@ -1,6 +1,7 @@
 package timeout
 
 import (
+	"fmt"
 	"github.com/ez-pie/ez-supervisor/kubernetes"
 	"github.com/ez-pie/ez-supervisor/repo"
 	"log"
@@ -10,10 +11,15 @@ import (
 	"time"
 )
 
+var (
+	global_workspaceList []inactivityIdleManagerEntry
+)
+
 // InactivityIdleManager manage all workspace
 type InactivityIdleManager interface {
 	Add(workspaceId uint)
 	Tick(workspaceId uint)
+	Show() string
 }
 
 func NewInactivityIdleManager() (InactivityIdleManager, error) {
@@ -35,7 +41,13 @@ func (m inactivityIdleManagerImpl) Add(workspaceId uint) {
 		return
 	}
 
+	log.Println("before", m.workspaceList)
 	m.workspaceList = append(m.workspaceList, w)
+	log.Println("after:", m.workspaceList)
+
+	log.Println("before global", global_workspaceList)
+	global_workspaceList = append(global_workspaceList, w)
+	log.Println("after global", global_workspaceList)
 
 	//TODO: move the another place
 	taskId := kubernetes.TaskIdByWorkspaceId(workspaceId)
@@ -52,12 +64,23 @@ func (m inactivityIdleManagerImpl) Add(workspaceId uint) {
 }
 
 func (m inactivityIdleManagerImpl) Tick(workspaceId uint) {
-	for _, workspace := range m.workspaceList {
+	for _, workspace := range global_workspaceList {
 		if workspace.id() == workspaceId {
 			log.Printf("tick activity manager for workspaceId=%d", workspaceId)
 			workspace.tick()
 		}
 	}
+}
+
+func (m inactivityIdleManagerImpl) Show() string {
+	log.Println("show:", m.workspaceList)
+	log.Println("show global:", global_workspaceList)
+
+	str := ""
+	for i, workspace := range global_workspaceList {
+		str += fmt.Sprintf("i=%v -> wid=%v", i, workspace.id())
+	}
+	return str
 }
 
 // inactivityIdleManagerEntry is the entry for a single workspace
