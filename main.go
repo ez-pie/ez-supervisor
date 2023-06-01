@@ -84,10 +84,22 @@ func main() {
 			manage.HandleActivityAdd(c, activityManager, uint(u64))
 		})
 
+		w3.POST("/createbytask/:task_id", func(c *gin.Context) {
+			tid := c.Param("task_id")
+			wid := repo.GetWorkspaceByTask(tid).ID
+			manage.HandleActivityAdd(c, activityManager, wid)
+		})
+
 		w3.POST("/tick/:workspace_id", func(c *gin.Context) {
 			wid := c.Param("workspace_id")
 			u64, _ := strconv.ParseUint(wid, 10, 32)
 			manage.HandleActivityTick(c, activityManager, uint(u64))
+		})
+
+		w3.POST("/tickbytask/:task_id", func(c *gin.Context) {
+			tid := c.Param("task_id")
+			wid := repo.GetWorkspaceByTask(tid).ID
+			manage.HandleActivityTick(c, activityManager, wid)
 		})
 	}
 
