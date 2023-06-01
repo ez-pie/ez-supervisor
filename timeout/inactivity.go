@@ -29,7 +29,7 @@ type inactivityIdleManagerImpl struct {
 }
 
 func (m inactivityIdleManagerImpl) Add(workspaceId uint) {
-	w, err := newInactivityIdleManagerEntry(workspaceId, 2*time.Second, 10*time.Second)
+	w, err := newInactivityIdleManagerEntry(workspaceId, 3*60*time.Second, 10*time.Second)
 	if err != nil {
 		log.Fatal("Unable to create activity manager. Cause: ", err.Error())
 		return
