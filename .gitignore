@@ -22,3 +22,4 @@ go.work
 
 tmp/
 cls-7e54yp5e-config
+.DS_Store
