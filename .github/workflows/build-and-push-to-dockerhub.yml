@@ -6,15 +6,15 @@ on:
       - v*
 
 jobs:
-  build:
+  build-and-push:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
       - name: Build Image
         run: |
-          echo "💡Build image with tag ${{ github.ref }}"
-          docker build -t mirrordust/ez-supervisor:${{ github.ref }} .
+          echo "💡Build image with tag ${{ github.ref_name }}"
+          docker build -t mirrordust/ez-supervisor:${{ github.ref_name }} .
 
       - name: Login to Registry
         run: |
@@ -22,4 +22,4 @@ jobs:
 
       - name: Push Image
         run: |
-          docker push mirrordust/ez-supervisor:${{ github.ref }}
+          docker push mirrordust/ez-supervisor:${{ github.ref_name }}
