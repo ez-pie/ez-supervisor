@@ -1,0 +1,7 @@
+apiVersion: stable.ezpie.ai/v1
+kind: DevWorkspace
+metadata:
+  name: my-new-workspace
+spec:
+  deploymentName: "test dep name"
+  replicas: 2
