@@ -38,12 +38,76 @@ spec:
               type: object
               properties:
                 # spec 定义开始
-                deploymentName:
-                  type: string
-                replicas:
-                  type: integer
-                  minimum: 1
-                  maximum: 10
+                # task 相关定义
+                task:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    desc:
+                      type: string
+                # 数据相关定义
+                data:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      # public/exclusive/private
+                      fileSecurityLevel:
+                        type: string
+                      # 文件显示的名字（上传时的原始文件名）
+                      realName:
+                        type: string
+                      # 对象存储桶
+                      ossBucket:
+                        type: string
+                      # 对象存储路径
+                      ossPath:
+                        type: string
+                      # 对象存储文件名
+                      ossName:
+                        type: string
+                # workspace 环境定义
+                workspace:
+                  type: object
+                  properties:
+                    # CPU
+                    cpuRequest:
+                      type: integer
+                    cpuLimit:
+                      type: integer
+                    # 内存
+                    memRequest:
+                      type: integer
+                    memLimit:
+                      type: integer
+                    # 硬盘
+                    diskSize:
+                      type: integer
+                    # IDE 选择
+                    image:
+                      type: string
+                    # deployment/service/ingress
+                    namespaceName:
+                      type: string
+                    deploymentName:
+                      type: string
+                    serviceName:
+                      type: string
+                    ingressName:
+                      type: string
+                    # 环境变量
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
             # status 定义
             status:
               type: object
@@ -51,18 +115,30 @@ spec:
                 # status 定义开始
                 availableReplicas:
                   type: integer
+                devWorkspaceStatus:
+                  type: string
       # subresources for the custom resource
       subresources:
         # enables the status subresource
         status: { }
       additionalPrinterColumns:
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
         - name: Deploy
           type: string
-          description: The name of deployment
-          jsonPath: .spec.deploymentName
+          jsonPath: .spec.workspace.deploymentName
+        - name: Service
+          type: string
+          jsonPath: .spec.workspace.serviceName
+        - name: Ingress
+          type: string
+          jsonPath: .spec.workspace.ingressName
+        - name: Status
+          type: string
+          jsonPath: .status.devWorkspaceStatus
         - name: R
           type: integer
-          description: The replicas
-          jsonPath: .spec.replicas
+          jsonPath: .status.availableReplicas
           # 优先级默认为 0，大于 0 的列只会在宽视图（使用 -o wide 标志）中显示
           priority: 1

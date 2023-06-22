@@ -3,5 +3,9 @@ kind: DevWorkspace
 metadata:
   name: my-new-workspace
 spec:
-  deploymentName: "test dep name"
-  replicas: 2
+  task:
+    id: "233"
+    name: "233 name"
+    desc: "这是一个任务233"
+  workspace:
+    deploymentName: "hahha🐸"
