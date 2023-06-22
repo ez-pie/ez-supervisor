@@ -1,25 +1,14 @@
 #!/usr/bin/env bash
 
-# Copyright 2017 The Kubernetes Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-set -o errexit
-set -o nounset
-set -o pipefail
+set -o errexit  # 同 set -e，脚本只要发生错误，就终止执行
+set -o nounset  # 同 set -u，遇到不存在的变量会报错，并停止执行
+set -o pipefail # 只要一个子命令失败，整个管道命令就失败，脚本就会终止执行（默认情况下只要最后一个子命令不失败，管道命令总是会执行成功）
 
 SCRIPT_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
-CODEGEN_PKG=${CODEGEN_PKG:-$(cd "${SCRIPT_ROOT}"; ls -d -1 ./vendor/k8s.io/code-generator 2>/dev/null || echo ../code-generator)}
+CODEGEN_PKG=${CODEGEN_PKG:-$(
+  cd "${SCRIPT_ROOT}"
+  ls -d -1 ./vendor/k8s.io/code-generator 2>/dev/null || echo ../code-generator
+)}
 
 source "${CODEGEN_PKG}/kube_codegen.sh"
 
@@ -29,13 +18,13 @@ source "${CODEGEN_PKG}/kube_codegen.sh"
 #                  instead of the $GOPATH directly. For normal projects this can be dropped.
 
 kube::codegen::gen_helpers \
-    --input-pkg-root k8s.io/sample-controller/pkg/apis \
-    --output-base "$(dirname "${BASH_SOURCE[0]}")/../../.." \
-    --boilerplate "${SCRIPT_ROOT}/hack/boilerplate.go.txt"
+  --input-pkg-root k8s.io/sample-controller/pkg/apis \
+  --output-base "$(dirname "${BASH_SOURCE[0]}")/../../.." \
+  --boilerplate "${SCRIPT_ROOT}/hack/boilerplate.go.txt"
 
 kube::codegen::gen_client \
-    --with-watch \
-    --input-pkg-root k8s.io/sample-controller/pkg/apis \
-    --output-pkg-root k8s.io/sample-controller/pkg/generated \
-    --output-base "$(dirname "${BASH_SOURCE[0]}")/../../.." \
-    --boilerplate "${SCRIPT_ROOT}/hack/boilerplate.go.txt"
+  --with-watch \
+  --input-pkg-root k8s.io/sample-controller/pkg/apis \
+  --output-pkg-root k8s.io/sample-controller/pkg/generated \
+  --output-base "$(dirname "${BASH_SOURCE[0]}")/../../.." \
+  --boilerplate "${SCRIPT_ROOT}/hack/boilerplate.go.txt"
