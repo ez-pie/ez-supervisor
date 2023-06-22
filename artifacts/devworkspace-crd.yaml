@@ -42,33 +42,38 @@ spec:
                 task:
                   type: object
                   properties:
-                    id:
+                    tid:
                       type: string
                     name:
                       type: string
                     desc:
                       type: string
+                  required:
+                    - tid
                 # 数据相关定义
                 data:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      # public/exclusive/private
-                      fileSecurityLevel:
-                        type: string
-                      # 文件显示的名字（上传时的原始文件名）
-                      realName:
-                        type: string
-                      # 对象存储桶
-                      ossBucket:
-                        type: string
-                      # 对象存储路径
-                      ossPath:
-                        type: string
-                      # 对象存储文件名
-                      ossName:
-                        type: string
+                  type: object
+                  properties:
+                    entries:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          # public/exclusive/private
+                          fileSecurityLevel:
+                            type: string
+                          # 文件显示的名字（上传时的原始文件名）
+                          realName:
+                            type: string
+                          # 对象存储桶
+                          ossBucket:
+                            type: string
+                          # 对象存储路径
+                          ossPath:
+                            type: string
+                          # 对象存储文件名
+                          ossName:
+                            type: string
                 # workspace 环境定义
                 workspace:
                   type: object
@@ -108,15 +113,24 @@ spec:
                             type: string
                           value:
                             type: string
+                  required:
+                    - cpuLimit
+                    - memLimit
+                    - diskSize
+                    - image
+                    - namespaceName
+                    - deploymentName
+                    - serviceName
+                    - ingressName
             # status 定义
             status:
               type: object
               properties:
                 # status 定义开始
-                availableReplicas:
-                  type: integer
                 devWorkspaceStatus:
                   type: string
+                availableReplicas:
+                  type: integer
       # subresources for the custom resource
       subresources:
         # enables the status subresource

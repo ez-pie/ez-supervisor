@@ -4,8 +4,23 @@ metadata:
   name: my-new-workspace
 spec:
   task:
-    id: "233"
+    tid: "233"
     name: "233 name"
     desc: "这是一个任务233"
   workspace:
     deploymentName: "hahha🐸"
+    env:
+      - name: "env name 1"
+        value: "env value 1"
+      - name: "env name 2 no value"
+    cpuLimit: 2
+    memLimit: 2
+    diskSize: 10
+    image: "xxx"
+    namespaceName: "namespace"
+    serviceName: "service"
+    ingressName: "ing"
+  data:
+    entries:
+      - realName: "file-1"
+      - realName: "file-2"
