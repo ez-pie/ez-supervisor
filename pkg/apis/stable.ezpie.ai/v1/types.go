@@ -48,10 +48,10 @@ type EzDataEntry struct {
 }
 
 type EzWorkspace struct {
-	CpuRequest     int32            `json:"cpuRequest"`
-	CpuLimit       int32            `json:"cpuLimit"`
-	MemRequest     int32            `json:"memRequest"`
-	MemLimit       int32            `json:"memLimit"`
+	CpuRequest     string           `json:"cpuRequest"`
+	CpuLimit       string           `json:"cpuLimit"`
+	MemRequest     string           `json:"memRequest"`
+	MemLimit       string           `json:"memLimit"`
 	DiskSize       int32            `json:"diskSize"`
 	Image          string           `json:"image"`
 	NamespaceName  string           `json:"namespaceName"`

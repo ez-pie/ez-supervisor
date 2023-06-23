@@ -7,8 +7,11 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	appsinformers "k8s.io/client-go/informers/apps/v1"
@@ -441,4 +444,303 @@ func newDeployment(devWorkspace *ezv1.DevWorkspace) *appsv1.Deployment {
 			},
 		},
 	}
+}
+
+func newNamespace(devWorkspace *ezv1.DevWorkspace) *corev1.Namespace {
+	return &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: devWorkspace.Spec.Workspace.NamespaceName,
+		},
+	}
+}
+
+func pvName(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) string {
+	var type1 string
+
+	switch dataEntry.FileSecurityLevel {
+	case "public":
+		type1 = "pub"
+	case "exclusive":
+		type1 = "exc"
+	case "private":
+		type1 = "pri"
+	default:
+		type1 = "ukn"
+	}
+
+	return fmt.Sprintf("pv-%v-%v-%v", devWorkspace.Spec.Task.Tid, type1, dataSeq)
+}
+func pvcName(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) string {
+	var type1 string
+
+	switch dataEntry.FileSecurityLevel {
+	case "public":
+		type1 = "pub"
+	case "exclusive":
+		type1 = "exc"
+	case "private":
+		type1 = "pri"
+	default:
+		type1 = "ukn"
+	}
+
+	return fmt.Sprintf("pvc-%v-%v-%v", devWorkspace.Spec.Task.Tid, type1, dataSeq)
+}
+
+func newCosPv(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) *corev1.PersistentVolume {
+	volumeMode := corev1.PersistentVolumeFilesystem
+	pvName1 := pvName(devWorkspace, dataEntry, dataSeq)
+
+	return &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: pvName1,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(devWorkspace, ezv1.SchemeGroupVersion.WithKind(devWorkspaceKind)),
+			},
+		},
+		Spec: corev1.PersistentVolumeSpec{
+			AccessModes:                   []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+			Capacity:                      corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")},
+			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
+			VolumeMode:                    &volumeMode,
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				CSI: &corev1.CSIPersistentVolumeSource{
+					Driver:       "com.tencent.cloud.csi.cosfs",
+					VolumeHandle: pvName1,
+					NodePublishSecretRef: &corev1.SecretReference{
+						Name:      "cos-secret",
+						Namespace: "kube-system",
+					},
+					VolumeAttributes: map[string]string{
+						"url":             "http://cos.ap-hongkong.myqcloud.com",
+						"bucket":          dataEntry.OssBucket,
+						"path":            dataEntry.OssPath,
+						"additional_args": "-oensure_diskfree=20480 -oallow_other",
+					},
+				},
+			},
+		},
+	}
+}
+
+func newPvc(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) *corev1.PersistentVolumeClaim {
+	pvcName1 := pvcName(devWorkspace, dataEntry, dataSeq)
+	pvName1 := pvName(devWorkspace, dataEntry, dataSeq)
+	storageClassName := ""
+
+	return &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvcName1,
+			Namespace: devWorkspace.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(devWorkspace, ezv1.SchemeGroupVersion.WithKind(devWorkspaceKind)),
+			},
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")},
+			},
+			VolumeName:       pvName1,
+			StorageClassName: &storageClassName,
+		},
+	}
+}
+
+func volumeName(pvcName1 string) string {
+	return fmt.Sprintf("vol-%v", pvcName1)
+}
+
+func newDepl(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Deployment {
+	// 准备 volumes 和 volumeMounts
+	var vols []corev1.Volume
+	var volMnts []corev1.VolumeMount
+	var volName string
+	var vol corev1.Volume
+	var volMnt corev1.VolumeMount
+	// public 数据
+	for _, item := range pvcinfo.pubList {
+		volName = volumeName(item.pvcName)
+
+		vol = corev1.Volume{
+			Name: volName,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: item.pvcName,
+					ReadOnly:  true,
+				},
+			},
+		}
+		vols = append(vols, vol)
+
+		volMnt = corev1.VolumeMount{
+			Name:      volName,
+			ReadOnly:  true,
+			MountPath: fmt.Sprintf("/home/data/public/%v", item.fileShowName),
+			SubPath:   item.fileName,
+		}
+		volMnts = append(volMnts, volMnt)
+	}
+	// private 数据
+	for _, item := range pvcinfo.priList {
+		volName = volumeName(item.pvcName)
+
+		vol = corev1.Volume{
+			Name: volName,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: item.pvcName,
+					ReadOnly:  true,
+				},
+			},
+		}
+		vols = append(vols, vol)
+
+		volMnt = corev1.VolumeMount{
+			Name:      volName,
+			ReadOnly:  true,
+			MountPath: fmt.Sprintf("/home/data/private/%v", item.fileShowName),
+			SubPath:   item.fileName,
+		}
+		volMnts = append(volMnts, volMnt)
+	}
+
+	labels := map[string]string{
+		"ezpie-app": devWorkspace.Spec.Workspace.DeploymentName,
+	}
+
+	// 准备 containers
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      devWorkspace.Spec.Workspace.DeploymentName,
+			Namespace: devWorkspace.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(devWorkspace, ezv1.SchemeGroupVersion.WithKind(devWorkspaceKind)),
+			},
+			Labels: labels,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: int32Ptr(1),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: labels,
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: labels,
+				},
+				Spec: corev1.PodSpec{
+					Volumes: vols,
+					Containers: []corev1.Container{
+						{
+							Name:            fmt.Sprintf("%v-container-1", devWorkspace.Spec.Workspace.DeploymentName),
+							Image:           "mirrordust/code:v0.2.0",
+							ImagePullPolicy: corev1.PullAlways,
+							Ports: []corev1.ContainerPort{
+								{
+									ContainerPort: 3000,
+								},
+							},
+							VolumeMounts: volMnts,
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse(devWorkspace.Spec.Workspace.CpuLimit),
+									corev1.ResourceMemory: resource.MustParse(devWorkspace.Spec.Workspace.MemLimit),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse(devWorkspace.Spec.Workspace.CpuRequest),
+									corev1.ResourceMemory: resource.MustParse(devWorkspace.Spec.Workspace.MemRequest),
+								},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name:  "TASKID",
+									Value: devWorkspace.Spec.Task.Tid,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func newService(devWorkspace *ezv1.DevWorkspace) *corev1.Service {
+	labels := map[string]string{
+		"ezpie-app": devWorkspace.Spec.Workspace.DeploymentName,
+	}
+
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      devWorkspace.Spec.Workspace.ServiceName,
+			Namespace: devWorkspace.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(devWorkspace, ezv1.SchemeGroupVersion.WithKind(devWorkspaceKind)),
+			},
+			Labels: labels,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: labels,
+			Ports: []corev1.ServicePort{
+				{
+					Protocol:   corev1.ProtocolTCP,
+					Port:       3000,
+					TargetPort: intstr.FromInt32(3000),
+				},
+			},
+		},
+	}
+}
+
+func newIngress(devWorkspace *ezv1.DevWorkspace) *networkingv1.Ingress {
+	pathType1 := networkingv1.PathTypePrefix
+
+	return &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      devWorkspace.Spec.Workspace.IngressName,
+			Namespace: devWorkspace.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(devWorkspace, ezv1.SchemeGroupVersion.WithKind(devWorkspaceKind)),
+			},
+			Annotations: map[string]string{
+				"kubernetes.io/ingress.class": "nginx",
+			},
+		},
+		Spec: networkingv1.IngressSpec{
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: fmt.Sprintf("workspace-%v.124.156.125.152.nip.io", devWorkspace.Spec.Task.Tid),
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/",
+									PathType: &pathType1,
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: devWorkspace.Spec.Workspace.ServiceName,
+											Port: networkingv1.ServiceBackendPort{
+												Number: 3000,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+type pvcInfo struct {
+	pubList []pvcItem
+	priList []pvcItem
+}
+
+type pvcItem struct {
+	pvcName      string
+	fileName     string
+	fileShowName string
 }

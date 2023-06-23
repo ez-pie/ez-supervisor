@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -64,9 +65,14 @@ func init() {
 		case DevLocal:
 			fallthrough
 		default:
-			devKubeConfig = fmt.Sprintf("%s/.kube/config", os.Getenv("HOME"))
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				log.Fatal(err)
+			}
+			devKubeConfig = filepath.Join(homeDir, ".kube", "config")
 		}
 
+		fmt.Printf("devKubeConfig -> %v\n", devKubeConfig)
 		config, err = clientcmd.BuildConfigFromFlags("", devKubeConfig)
 		if err != nil {
 			logger.Error(err, "Error building kubeconfig")
