@@ -112,10 +112,14 @@ func init() {
 
 	fmt.Println("到这了！！🦅🦅🦅")
 
-	if err = controller.Run(ctx, 2); err != nil {
-		logger.Error(err, "Error running controller")
-		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
-	}
+	// 以协程运行，避免阻塞 web 服务
+	go func() {
+		err1 := controller.Run(ctx, 2)
+		if err1 != nil {
+			logger.Error(err, "Error running controller")
+			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+		}
+	}()
 
 	fmt.Println("在这之后!!!!!🐸🐸🐸")
 }
