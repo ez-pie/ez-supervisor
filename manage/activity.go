@@ -1,10 +1,11 @@
 package manage
 
 import (
-	"github.com/ez-pie/ez-supervisor/timeout"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/ez-pie/ez-supervisor/timeout"
 )
 
 func HandleActivityAdd(c *gin.Context, manager timeout.InactivityIdleManager, workspaceId uint) {

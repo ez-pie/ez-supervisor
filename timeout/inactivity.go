@@ -2,13 +2,14 @@ package timeout
 
 import (
 	"fmt"
-	"github.com/ez-pie/ez-supervisor/kubernetes"
-	"github.com/ez-pie/ez-supervisor/repo"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/ez-pie/ez-supervisor/kubernetes"
+	"github.com/ez-pie/ez-supervisor/repo"
 )
 
 var (

@@ -1,8 +1,9 @@
 package repo
 
 import (
-	"gorm.io/gorm"
 	"log"
+
+	"gorm.io/gorm"
 )
 
 type Workspace struct {

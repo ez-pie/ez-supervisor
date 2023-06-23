@@ -1,9 +1,10 @@
 package repo
 
 import (
-	"gorm.io/gorm"
 	"log"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type WorkspaceStats struct {

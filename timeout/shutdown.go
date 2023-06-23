@@ -1,9 +1,10 @@
 package timeout
 
 import (
+	"time"
+
 	"github.com/ez-pie/ez-supervisor/kubernetes"
 	"github.com/ez-pie/ez-supervisor/repo"
-	"time"
 )
 
 const (
