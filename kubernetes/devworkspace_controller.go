@@ -555,9 +555,10 @@ func newDepl(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Deploymen
 	// 准备 volumes 和 volumeMounts
 	var vols []corev1.Volume
 	var volMnts []corev1.VolumeMount
-	var volName string
 	var vol corev1.Volume
 	var volMnt corev1.VolumeMount
+	var volName string
+
 	// public 数据
 	for _, item := range pvcinfo.pubList {
 		volName = volumeName(item.pvcName)
