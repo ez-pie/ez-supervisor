@@ -2,103 +2,139 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	//
-	// Uncomment to load all auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth"
-	//
-	// Or uncomment to load specific auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/azure"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
+	"k8s.io/klog/v2"
+
+	ezclientset "github.com/ez-pie/ez-supervisor/pkg/generated/clientset/versioned"
+	ezinformers "github.com/ez-pie/ez-supervisor/pkg/generated/informers/externalversions"
+	"github.com/ez-pie/ez-supervisor/pkg/signals"
 )
 
 const (
-	KubeModeProd    = "PRODUCTION"
-	_               = "DEVELOPMENT"
-	localKubeConfig = "./cls-7e54yp5e-config"
+	devWorkspaceName = "devworkspaces.stable.ezpie.ai"
+
+	KubeModeProd        = "PRODUCTION"
+	_                   = "DEVELOPMENT"
+	DevLocal            = "LOCAL"
+	DevRemote           = "REMOTE"
+	devRemoteKubeConfig = "./cls-7e54yp5e-config"
 )
 
-var ClientSet *kubernetes.Clientset
+var (
+	kubeClient         *kubernetes.Clientset
+	apiExtensionClient *apiextensionsclientset.Clientset
+	ezClient           *ezclientset.Clientset
+)
 
 func init() {
+	klog.InitFlags(nil)
 	log.Println("INIT Kubernetes...")
 
 	var config *rest.Config
 	var err error
+	// set up signals so we handle the shutdown signal gracefully
+	ctx := signals.SetupSignalHandler()
+	logger := klog.FromContext(ctx)
 
 	if inK8s() {
 		// creates the in-cluster config
 		config, err = rest.InClusterConfig()
 		if err != nil {
+			logger.Error(err, "Error building in-cluster config")
+			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 			panic(err.Error())
 		}
 	} else {
-		config, err = clientcmd.BuildConfigFromFlags("", localKubeConfig)
+		// create out-cluster config
+		var devKubeConfig string
+
+		switch os.Getenv("DMODE") {
+		case DevRemote:
+			devKubeConfig = devRemoteKubeConfig
+		case DevLocal:
+			fallthrough
+		default:
+			devKubeConfig = fmt.Sprintf("%s/.kube/config", os.Getenv("HOME"))
+		}
+
+		config, err = clientcmd.BuildConfigFromFlags("", devKubeConfig)
 		if err != nil {
+			logger.Error(err, "Error building kubeconfig")
+			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 			panic(err.Error())
 		}
 	}
 
-	// creates the clientSet
-	tmpClientSet, err := kubernetes.NewForConfig(config)
+	kubeClient, err = kubernetes.NewForConfig(config)
 	if err != nil {
+		logger.Error(err, "Error building kubernetes clientset")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 		panic(err.Error())
 	}
 
-	ClientSet = tmpClientSet
+	apiExtensionClient, err = apiextensionsclientset.NewForConfig(config)
+	if err != nil {
+		logger.Error(err, "Error building apiextensions clientset")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+		panic(err.Error())
+	}
 
-	// just for test
-	myTestK8s()
+	testCrd()
+
+	ezClient, err = ezclientset.NewForConfig(config)
+	if err != nil {
+		logger.Error(err, "Error building ezpie clientset")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+		panic(err.Error())
+	}
+
+	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
+	exampleInformerFactory := ezinformers.NewSharedInformerFactory(ezClient, time.Second*30)
+
+	controller := NewController(ctx, kubeClient, ezClient,
+		kubeInformerFactory.Apps().V1().Deployments(),
+		exampleInformerFactory.Stable().V1().DevWorkspaces())
+
+	// notice that there is no need to run Start methods in a separate goroutine. (i.e. go kubeInformerFactory.Start(ctx.done())
+	// Start method is non-blocking and runs all registered informers in a dedicated goroutine.
+	kubeInformerFactory.Start(ctx.Done())
+	exampleInformerFactory.Start(ctx.Done())
+
+	fmt.Println("到这了！！🦅🦅🦅")
+
+	if err = controller.Run(ctx, 2); err != nil {
+		logger.Error(err, "Error running controller")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
+
+	fmt.Println("在这之后!!!!!🐸🐸🐸")
 }
 
 func inK8s() bool {
-	var mode string
-	mode = os.Getenv("DEV_MODE")
+	mode := os.Getenv("DEV_MODE")
 	log.Printf("k8s mode = [%v]", mode)
-	if mode == KubeModeProd {
-		return true
-	} else {
-		return false
-	}
+
+	return mode == KubeModeProd
 }
 
-func myTestK8s() {
-	log.Println("TEST Kubernetes...")
+func testCrd() {
+	log.Println("Check if ezpie CRD exists in the K8S...")
 
-	for i := 0; i < 2; i++ {
-		pods, err := ClientSet.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
-		if err != nil {
-			panic(err.Error())
-		}
-		log.Printf("There are %d pods in the cluster\n", len(pods.Items))
-
-		// Examples for error handling:
-		// - Use helper functions like e.g. errors.IsNotFound()
-		// - And/or cast to StatusError and use its properties like e.g. ErrStatus.Message
-		namespace := "default"
-		pod := "ide-746bcbb595-k6pgw"
-
-		_, err = ClientSet.CoreV1().Pods(namespace).Get(context.TODO(), pod, metav1.GetOptions{})
-		if errors.IsNotFound(err) {
-			log.Printf("Pod %s in namespace %s not found\n", pod, namespace)
-		} else if statusError, isStatus := err.(*errors.StatusError); isStatus {
-			log.Printf("Error getting pod %s in namespace %s: %v\n",
-				pod, namespace, statusError.ErrStatus.Message)
-		} else if err != nil {
-			panic(err.Error())
-		} else {
-			log.Printf("Found pod %s in namespace %s\n", pod, namespace)
-		}
-
-		time.Sleep(1 * time.Second)
+	devWorkspaceCrd, err := apiExtensionClient.ApiextensionsV1().CustomResourceDefinitions().Get(
+		context.TODO(), devWorkspaceName, metav1.GetOptions{})
+	if err != nil {
+		log.Println(err.Error())
+		return
 	}
+	log.Printf("Got the ezpie CRD: %v", devWorkspaceCrd.Name)
 }

@@ -1,14 +1,14 @@
 apiVersion: stable.ezpie.ai/v1
 kind: DevWorkspace
 metadata:
-  name: my-new-workspace
+  name: my-new-workspace-2
 spec:
   task:
     tid: "233"
     name: "233 name"
     desc: "这是一个任务233"
   workspace:
-    deploymentName: "atestdepl"
+    deploymentName: "oooooooo"
     env:
       - name: "env name 1"
         value: "env value 1"

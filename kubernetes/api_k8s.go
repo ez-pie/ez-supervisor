@@ -21,7 +21,7 @@ import (
 
 func StopWorkspace(workspaceId uint) error {
 	deployName1 := deployName(workspaceId)
-	deploymentsClient := ClientSet.AppsV1().Deployments("ezpie")
+	deploymentsClient := kubeClient.AppsV1().Deployments("ezpie")
 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Retrieve the latest version of Deployment before attempting update
@@ -46,7 +46,7 @@ func StopWorkspace(workspaceId uint) error {
 
 func ReopenWorkspace(workspaceId uint) error {
 	deployName1 := deployName(workspaceId)
-	deploymentsClient := ClientSet.AppsV1().Deployments("ezpie")
+	deploymentsClient := kubeClient.AppsV1().Deployments("ezpie")
 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Retrieve the latest version of Deployment before attempting update

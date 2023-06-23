@@ -109,7 +109,7 @@ func main() {
 
 	// test url
 	r.GET("/", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"test_message": "Workstation supervisor!"})
+		c.JSON(http.StatusOK, gin.H{"test_message": "Ezpie Workstation supervisor(2)!"})
 	})
 
 	// 监听并在 0.0.0.0:8080 上启动服务
