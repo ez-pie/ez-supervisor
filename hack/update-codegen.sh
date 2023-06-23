@@ -17,14 +17,17 @@ source "${CODEGEN_PKG}/kube_codegen.sh"
 #                  k8s.io/kubernetes. The output-base is needed for the generators to output into the vendor dir
 #                  instead of the $GOPATH directly. For normal projects this can be dropped.
 
+# --output-base 要回到包的最外层，即 ls 能看到 github.com 目录，需要根据包名调整层数
+ROOT_PACKAGE="github.com/ez-pie/ez-supervisor"
+
 kube::codegen::gen_helpers \
-  --input-pkg-root k8s.io/sample-controller/pkg/apis \
-  --output-base "$(dirname "${BASH_SOURCE[0]}")/../../.." \
+  --input-pkg-root "${ROOT_PACKAGE}/pkg/apis" \
+  --output-base "$(dirname "${BASH_SOURCE[0]}")/../../../.." \
   --boilerplate "${SCRIPT_ROOT}/hack/boilerplate.go.txt"
 
 kube::codegen::gen_client \
   --with-watch \
-  --input-pkg-root k8s.io/sample-controller/pkg/apis \
-  --output-pkg-root k8s.io/sample-controller/pkg/generated \
-  --output-base "$(dirname "${BASH_SOURCE[0]}")/../../.." \
+  --input-pkg-root "${ROOT_PACKAGE}/pkg/apis" \
+  --output-pkg-root "${ROOT_PACKAGE}/pkg/generated" \
+  --output-base "$(dirname "${BASH_SOURCE[0]}")/../../../.." \
   --boilerplate "${SCRIPT_ROOT}/hack/boilerplate.go.txt"
