@@ -12,9 +12,11 @@ import (
 	"github.com/ez-pie/ez-supervisor/repo"
 )
 
-var (
-	globalWorkspaceList []inactivityIdleManagerEntry
-)
+var globalWorkspaceList []inactivityIdleManagerEntry
+
+// TODO 调整时间
+var idleTimeout = 3 * 60 * time.Second
+var stopRetryPeriod = 10 * time.Second
 
 // InactivityIdleManager manage all workspace
 type InactivityIdleManager interface {
@@ -36,7 +38,7 @@ type inactivityIdleManagerImpl struct {
 }
 
 func (m inactivityIdleManagerImpl) Add(workspaceId uint) {
-	w, err := newInactivityIdleManagerEntry(workspaceId, 3*60*time.Second, 10*time.Second)
+	w, err := newInactivityIdleManagerEntry(workspaceId, idleTimeout, stopRetryPeriod)
 	if err != nil {
 		log.Fatal("Unable to create activity manager. Cause: ", err.Error())
 		return
