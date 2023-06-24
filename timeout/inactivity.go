@@ -51,10 +51,11 @@ func (m inactivityIdleManagerImpl) Add(workspaceId uint) {
 	log.Println("after global", globalWorkspaceList)
 
 	//TODO: move the another place
-	taskId := kubernetes.TaskIdByWorkspaceId(workspaceId)
+	taskId, mileId := kubernetes.TaskAndMilestoneIdByWorkspaceId(workspaceId)
 	wss := repo.WorkspaceStats{
 		WorkspaceId: workspaceId,
 		TaskId:      taskId,
+		MilestoneId: mileId,
 		StartTime:   time.Now().Unix(),
 	}
 	repo.GetOrCreateWorkspaceStatsByWorkspaceId(wss)
@@ -141,6 +142,8 @@ func (m inactivityIdleManagerEntryImpl) start() {
 				}
 			case <-m.activityC:
 				log.Println("Activity is reported. Resetting timer")
+				UpdateWorkspaceTimeByWorkspaceId(m.workspaceId)
+
 				if !timer.Stop() {
 					<-timer.C
 				}

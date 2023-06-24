@@ -13,15 +13,7 @@ const (
 )
 
 func stopWorkspace(workspaceId uint, reason string) error {
-
-	//TODO: move the another place
-	wss := repo.GetWorkspaceStatsByWorkspaceId(workspaceId)
-	wss.CurrentTime = time.Now().Unix()
-	wss.TotalTime = wss.CurrentTime - wss.StartTime + wss.TotalTime
-	wss.StartTime = wss.CurrentTime
-
-	repo.UpdateWorkspaceStats(wss)
-	//TODO end
+	UpdateWorkspaceTimeByWorkspaceId(workspaceId)
 
 	err := kubernetes.StopWorkspace(workspaceId)
 	if err != nil {
@@ -40,4 +32,28 @@ func ReopenWorkspace(workspaceId uint) error {
 		return err
 	}
 	return nil
+}
+
+func UpdateWorkspaceTimeByWorkspaceId(workspaceId uint) {
+	ws := repo.GetWorkspace(workspaceId)
+	currentMileId := ws.CurrentMilestoneId
+
+	wss := repo.GetWorkspaceStatsByWorkspaceAndMileId(workspaceId, currentMileId)
+	wss.CurrentTime = time.Now().Unix()
+	wss.TotalTime = wss.CurrentTime - wss.StartTime + wss.TotalTime
+	wss.StartTime = wss.CurrentTime
+
+	repo.UpdateWorkspaceStats(wss)
+}
+
+func UpdateWorkspaceTimeByTaskId(taskId string) {
+	ws := repo.GetWorkspaceByTask(taskId)
+	currentMileId := ws.CurrentMilestoneId
+
+	wss := repo.GetWorkspaceStatsByTaskAndMileId(taskId, currentMileId)
+	wss.CurrentTime = time.Now().Unix()
+	wss.TotalTime = wss.CurrentTime - wss.StartTime + wss.TotalTime
+	wss.StartTime = wss.CurrentTime
+
+	repo.UpdateWorkspaceStats(wss)
 }

@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -52,11 +53,12 @@ func main() {
 				ret := repo.UpdateWorkspace(wsModel1)
 
 				wsInfo1 := schemas.WorkspaceInfo{
-					Id:     ret.ID,
-					State:  ret.State,
-					Url:    ret.Url,
-					Token:  ret.Token,
-					TaskId: ret.TaskId,
+					Id:                 ret.ID,
+					State:              ret.State,
+					Url:                ret.Url,
+					Token:              ret.Token,
+					TaskId:             ret.TaskId,
+					CurrentMilestoneId: ret.CurrentMilestoneId,
 				}
 				c.JSON(http.StatusOK, wsInfo1)
 				return
@@ -64,15 +66,17 @@ func main() {
 
 			//数据库里新建表项
 			wsModel := repo.Workspace{
-				TaskId: workspaceCreate.Task.Id,
+				TaskId:             workspaceCreate.Task.Id,
+				CurrentMilestoneId: workspaceCreate.Task.InitMilestoneId,
 			}
 			ret := repo.CreateWorkspace(wsModel)
 			wsInfo := schemas.WorkspaceInfo{
-				Id:     ret.ID,
-				State:  ret.State,
-				Url:    ret.Url,
-				Token:  ret.Token,
-				TaskId: ret.TaskId,
+				Id:                 ret.ID,
+				State:              ret.State,
+				Url:                ret.Url,
+				Token:              ret.Token,
+				TaskId:             ret.TaskId,
+				CurrentMilestoneId: ret.CurrentMilestoneId,
 			}
 			//创建k8s资源
 			err2 := kubernetes.CreateDevWorkspace(strconv.Itoa(int(ret.ID)), workspaceCreate)
@@ -150,18 +154,74 @@ func main() {
 		w2.GET("/time/:workspace_id", func(c *gin.Context) {
 			wid := c.Param("workspace_id")
 			u64, _ := strconv.ParseUint(wid, 10, 32)
-			wss := repo.GetWorkspaceStatsByWorkspaceId(uint(u64))
+			totalTime := repo.GetWorkspaceTotalTimeByWorkspaceId(uint(u64))
 			c.JSON(http.StatusOK, gin.H{
-				"working_time": wss.TotalTime,
+				"working_time": totalTime,
 				"unit":         "second",
 			})
 		})
 
 		w2.GET("/timebytask/:task_id", func(c *gin.Context) {
 			tid := c.Param("task_id")
-			wss := repo.GetWorkspaceStatsByTaskId(tid)
+			totalTime := repo.GetWorkspaceTotalTimeByTaskId(tid)
 			c.JSON(http.StatusOK, gin.H{
-				"working_time": wss.TotalTime,
+				"working_time": totalTime,
+				"unit":         "second",
+			})
+		})
+
+		w2.GET("/miletimebytask/:task_id/:milestone_id", func(c *gin.Context) {
+			tid := c.Param("task_id")
+			mid := c.Param("milestone_id")
+
+			mileTime := repo.GetWorkspaceMileTotalTimeByTaskId(tid, mid)
+			c.JSON(http.StatusOK, gin.H{
+				"working_time": mileTime,
+				"unit":         "second",
+			})
+		})
+
+		w2.POST("/syncmiletime", func(c *gin.Context) {
+			var workMileUpdate schemas.WorkspaceMilestoneUpdate
+
+			if err := c.ShouldBindJSON(&workMileUpdate); err != nil {
+				log.Println(err.Error())
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			if workMileUpdate.MilestoneId == "0" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "current milestone id should not be 0"})
+				return
+			}
+
+			wsModel := repo.GetWorkspaceByTask(workMileUpdate.TaskId)
+			wsModel.LastMilestoneId = wsModel.CurrentMilestoneId
+			if wsModel.LastMilestoneId != workMileUpdate.MilestoneId {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "sync error. last milestone in workstation and param is different"})
+				return
+			}
+
+			// 先结束当前里程碑的计时，更新最后一段时间
+			timeout.UpdateWorkspaceTimeByTaskId(workMileUpdate.TaskId)
+
+			// 同步里程碑 id（切换到下一个里程碑 id）
+			wsModel.CurrentMilestoneId = workMileUpdate.NextMilestoneId
+			repo.UpdateWorkspace(wsModel)
+
+			// 新建下一个里程碑的初始记录
+			wssNew := repo.WorkspaceStats{
+				WorkspaceId: wsModel.ID,
+				TaskId:      workMileUpdate.TaskId,
+				MilestoneId: workMileUpdate.NextMilestoneId,
+				StartTime:   time.Now().Unix(),
+			}
+			repo.GetOrCreateWorkspaceStatsByWorkspaceId(wssNew)
+
+			// 返回上一个里程碑的时间
+			lastMileTime := repo.GetWorkspaceMileTotalTimeByTaskId(workMileUpdate.TaskId, workMileUpdate.MilestoneId)
+			c.JSON(http.StatusOK, gin.H{
+				"working_time": lastMileTime,
 				"unit":         "second",
 			})
 		})

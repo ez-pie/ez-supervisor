@@ -99,4 +99,11 @@ func TaskIdByWorkspaceId(workspaceId uint) string {
 	return taskId
 }
 
+func TaskAndMilestoneIdByWorkspaceId(workspaceId uint) (taskId, milestoneId string) {
+	a := repo.GetWorkspace(workspaceId)
+	taskId = a.TaskId
+	milestoneId = a.CurrentMilestoneId
+	return taskId, milestoneId
+}
+
 func int32Ptr(i int32) *int32 { return &i }
