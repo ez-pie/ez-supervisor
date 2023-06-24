@@ -89,8 +89,14 @@ func main() {
 			wid := c.Param("workspace_id")
 			u64, _ := strconv.ParseUint(wid, 10, 32)
 			wsModel := repo.GetWorkspace(uint(u64))
-			wsModel = *kubernetes.QueryWorkspaceStatus(&wsModel)
-			ret := repo.UpdateWorkspace(wsModel)
+
+			var ret repo.Workspace
+			if wsModel.State != "closed" {
+				wsModel = *kubernetes.QueryWorkspaceStatus(&wsModel)
+				ret = repo.UpdateWorkspace(wsModel)
+			} else {
+				ret = wsModel
+			}
 			wsInfo := schemas.WorkspaceInfo{
 				Id:     ret.ID,
 				State:  ret.State,
@@ -104,8 +110,14 @@ func main() {
 		w1.GET("/getbytask/:task_id", func(c *gin.Context) {
 			tid := c.Param("task_id")
 			wsModel := repo.GetWorkspaceByTask(tid)
-			wsModel = *kubernetes.QueryWorkspaceStatus(&wsModel)
-			ret := repo.UpdateWorkspace(wsModel)
+
+			var ret repo.Workspace
+			if wsModel.State != "closed" {
+				wsModel = *kubernetes.QueryWorkspaceStatus(&wsModel)
+				ret = repo.UpdateWorkspace(wsModel)
+			} else {
+				ret = wsModel
+			}
 			wsInfo := schemas.WorkspaceInfo{
 				Id:     ret.ID,
 				State:  ret.State,
