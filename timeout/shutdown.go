@@ -27,11 +27,14 @@ func stopWorkspace(workspaceId uint, reason string) error {
 	if err != nil {
 		return err
 	}
+	wsModel := repo.GetWorkspace(workspaceId)
+	wsModel.State = "closed"
+	repo.UpdateWorkspace(wsModel)
 
 	return nil
 }
 
-func reopenWorkspace(workspaceId uint) error {
+func ReopenWorkspace(workspaceId uint) error {
 	err := kubernetes.ReopenWorkspace(workspaceId)
 	if err != nil {
 		return err

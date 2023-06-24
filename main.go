@@ -39,9 +39,18 @@ func main() {
 			//检查是否以创建
 			wsModel1 := repo.GetWorkspaceByTask(workspaceCreate.Task.Id)
 			if wsModel1.TaskId != "" {
-				//已有则直接返回
+				//已有则检查状态，非 closed 则直接返回，如果是 closed 状态则需要重启
+				if wsModel1.State == "closed" {
+					err := timeout.ReopenWorkspace(wsModel1.ID)
+					if err != nil {
+						return
+					}
+					wsModel1.State = "creating"
+				}
+				//更新 workspace 状态
 				wsModel1 = *kubernetes.QueryWorkspaceStatus(&wsModel1)
 				ret := repo.UpdateWorkspace(wsModel1)
+
 				wsInfo1 := schemas.WorkspaceInfo{
 					Id:     ret.ID,
 					State:  ret.State,

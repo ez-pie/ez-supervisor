@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	global_workspaceList []inactivityIdleManagerEntry
+	globalWorkspaceList []inactivityIdleManagerEntry
 )
 
 // InactivityIdleManager manage all workspace
@@ -46,9 +46,9 @@ func (m inactivityIdleManagerImpl) Add(workspaceId uint) {
 	m.workspaceList = append(m.workspaceList, w)
 	log.Println("after:", m.workspaceList)
 
-	log.Println("before global", global_workspaceList)
-	global_workspaceList = append(global_workspaceList, w)
-	log.Println("after global", global_workspaceList)
+	log.Println("before global", globalWorkspaceList)
+	globalWorkspaceList = append(globalWorkspaceList, w)
+	log.Println("after global", globalWorkspaceList)
 
 	//TODO: move the another place
 	taskId := kubernetes.TaskIdByWorkspaceId(workspaceId)
@@ -65,7 +65,7 @@ func (m inactivityIdleManagerImpl) Add(workspaceId uint) {
 }
 
 func (m inactivityIdleManagerImpl) Tick(workspaceId uint) {
-	for _, workspace := range global_workspaceList {
+	for _, workspace := range globalWorkspaceList {
 		if workspace.id() == workspaceId {
 			log.Printf("tick activity manager for workspaceId=%d", workspaceId)
 			workspace.tick()
@@ -75,10 +75,10 @@ func (m inactivityIdleManagerImpl) Tick(workspaceId uint) {
 
 func (m inactivityIdleManagerImpl) Show() string {
 	log.Println("show:", m.workspaceList)
-	log.Println("show global:", global_workspaceList)
+	log.Println("show global:", globalWorkspaceList)
 
 	str := ""
-	for i, workspace := range global_workspaceList {
+	for i, workspace := range globalWorkspaceList {
 		str += fmt.Sprintf("i=%v -> wid=%v", i, workspace.id())
 	}
 	return str
