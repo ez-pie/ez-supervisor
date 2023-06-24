@@ -108,15 +108,17 @@ func init() {
 	exampleInformerFactory := ezinformers.NewSharedInformerFactory(ezClient, time.Second*30)
 
 	controller := NewController(ctx, kubeClient, ezClient,
+		kubeInformerFactory.Core().V1().PersistentVolumes(),
+		kubeInformerFactory.Core().V1().PersistentVolumeClaims(),
 		kubeInformerFactory.Apps().V1().Deployments(),
+		kubeInformerFactory.Core().V1().Services(),
+		kubeInformerFactory.Networking().V1().Ingresses(),
 		exampleInformerFactory.Stable().V1().DevWorkspaces())
 
 	// notice that there is no need to run Start methods in a separate goroutine. (i.e. go kubeInformerFactory.Start(ctx.done())
 	// Start method is non-blocking and runs all registered informers in a dedicated goroutine.
 	kubeInformerFactory.Start(ctx.Done())
 	exampleInformerFactory.Start(ctx.Done())
-
-	fmt.Println("到这了！！🦅🦅🦅")
 
 	// 以协程运行，避免阻塞 web 服务
 	go func() {
@@ -127,7 +129,6 @@ func init() {
 		}
 	}()
 
-	fmt.Println("在这之后!!!!!🐸🐸🐸")
 }
 
 func inK8s() bool {

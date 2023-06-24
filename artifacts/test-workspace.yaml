@@ -13,8 +13,8 @@ spec:
       - name: "env name 1"
         value: "env value 1"
       - name: "env name 2 no value"
-    cpuLimit: 2
-    memLimit: 2
+    cpuLimit: "2Gi"
+    memLimit: "2Gi"
     diskSize: 10
     image: "xxx"
     namespaceName: "namespace"

@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -15,10 +16,14 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	appsinformers "k8s.io/client-go/informers/apps/v1"
+	coreinformers "k8s.io/client-go/informers/core/v1"
+	networkinginformers "k8s.io/client-go/informers/networking/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisters "k8s.io/client-go/listers/apps/v1"
+	corelisters "k8s.io/client-go/listers/core/v1"
+	networkinglisters "k8s.io/client-go/listers/networking/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -29,6 +34,8 @@ import (
 	ezscheme "github.com/ez-pie/ez-supervisor/pkg/generated/clientset/versioned/scheme"
 	ezinformers "github.com/ez-pie/ez-supervisor/pkg/generated/informers/externalversions/stable.ezpie.ai/v1"
 	ezlisters "github.com/ez-pie/ez-supervisor/pkg/generated/listers/stable.ezpie.ai/v1"
+	"github.com/ez-pie/ez-supervisor/repo"
+	"github.com/ez-pie/ez-supervisor/schemas"
 )
 
 const (
@@ -58,8 +65,21 @@ type Controller struct {
 	// ezclientset is a clientset for our own API group
 	ezclientset ezclientset.Interface
 
-	deploymentsLister   appslisters.DeploymentLister
-	deploymentsSynced   cache.InformerSynced
+	pvLister corelisters.PersistentVolumeLister
+	pvSynced cache.InformerSynced
+
+	pvcLister corelisters.PersistentVolumeClaimLister
+	pvcSynced cache.InformerSynced
+
+	deploymentsLister appslisters.DeploymentLister
+	deploymentsSynced cache.InformerSynced
+
+	serviceLister corelisters.ServiceLister
+	serviceSynced cache.InformerSynced
+
+	ingressLister networkinglisters.IngressLister
+	ingressSynced cache.InformerSynced
+
 	devworkspacesLister ezlisters.DevWorkspaceLister
 	devworkspacesSynced cache.InformerSynced
 
@@ -79,8 +99,15 @@ func NewController(
 	ctx context.Context,
 	kubeclientset kubernetes.Interface,
 	ezclientset ezclientset.Interface,
+
+	pvInformer coreinformers.PersistentVolumeInformer,
+	pvcInformer coreinformers.PersistentVolumeClaimInformer,
 	deploymentInformer appsinformers.DeploymentInformer,
+	serviceInformer coreinformers.ServiceInformer,
+	ingressInformer networkinginformers.IngressInformer,
+
 	devworkspaceInformer ezinformers.DevWorkspaceInformer) *Controller {
+
 	logger := klog.FromContext(ctx)
 
 	// Create event broadcaster
@@ -98,8 +125,20 @@ func NewController(
 		kubeclientset: kubeclientset,
 		ezclientset:   ezclientset,
 
+		pvLister: pvInformer.Lister(),
+		pvSynced: pvInformer.Informer().HasSynced,
+
+		pvcLister: pvcInformer.Lister(),
+		pvcSynced: pvcInformer.Informer().HasSynced,
+
 		deploymentsLister: deploymentInformer.Lister(),
 		deploymentsSynced: deploymentInformer.Informer().HasSynced,
+
+		serviceLister: serviceInformer.Lister(),
+		serviceSynced: serviceInformer.Informer().HasSynced,
+
+		ingressLister: ingressInformer.Lister(),
+		ingressSynced: ingressInformer.Informer().HasSynced,
 
 		devworkspacesLister: devworkspaceInformer.Lister(),
 		devworkspacesSynced: devworkspaceInformer.Informer().HasSynced,
@@ -119,6 +158,41 @@ func NewController(
 		},
 	})
 
+	// --------------------------------------------------------------------------------
+	_, _ = pvInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.handleObject,
+
+		UpdateFunc: func(old, new interface{}) {
+			newPv1 := new.(*corev1.PersistentVolume)
+			oldPv1 := old.(*corev1.PersistentVolume)
+			if newPv1.ResourceVersion == oldPv1.ResourceVersion {
+				// Periodic resync will send update events for all known Deployments.
+				// Two different versions of the same Deployment will always have different RVs.
+				return
+			}
+			controller.handleObject(new)
+		},
+
+		DeleteFunc: controller.handleObject,
+	})
+
+	_, _ = pvcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.handleObject,
+
+		UpdateFunc: func(old, new interface{}) {
+			newPvc1 := new.(*corev1.PersistentVolumeClaim)
+			oldPvc1 := old.(*corev1.PersistentVolumeClaim)
+			if newPvc1.ResourceVersion == oldPvc1.ResourceVersion {
+				// Periodic resync will send update events for all known Deployments.
+				// Two different versions of the same Deployment will always have different RVs.
+				return
+			}
+			controller.handleObject(new)
+		},
+
+		DeleteFunc: controller.handleObject,
+	})
+
 	// Set up an event handler for when Deployment resources change. This
 	// handler will look up the owner of the given Deployment, and if it is
 	// owned by a DevWorkspace resource then the handler will enqueue that DevWorkspace resource for
@@ -129,9 +203,43 @@ func NewController(
 		AddFunc: controller.handleObject,
 
 		UpdateFunc: func(old, new interface{}) {
-			newDeploy := new.(*appsv1.Deployment)
-			oldDeploy := old.(*appsv1.Deployment)
-			if newDeploy.ResourceVersion == oldDeploy.ResourceVersion {
+			newDepl1 := new.(*appsv1.Deployment)
+			oldDepl1 := old.(*appsv1.Deployment)
+			if newDepl1.ResourceVersion == oldDepl1.ResourceVersion {
+				// Periodic resync will send update events for all known Deployments.
+				// Two different versions of the same Deployment will always have different RVs.
+				return
+			}
+			controller.handleObject(new)
+		},
+
+		DeleteFunc: controller.handleObject,
+	})
+
+	_, _ = serviceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.handleObject,
+
+		UpdateFunc: func(old, new interface{}) {
+			newSvc := new.(*corev1.Service)
+			oldSvc := old.(*corev1.Service)
+			if newSvc.ResourceVersion == oldSvc.ResourceVersion {
+				// Periodic resync will send update events for all known Deployments.
+				// Two different versions of the same Deployment will always have different RVs.
+				return
+			}
+			controller.handleObject(new)
+		},
+
+		DeleteFunc: controller.handleObject,
+	})
+
+	_, _ = ingressInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.handleObject,
+
+		UpdateFunc: func(old, new interface{}) {
+			newIng := new.(*networkingv1.Ingress)
+			oldIng := old.(*networkingv1.Ingress)
+			if newIng.ResourceVersion == oldIng.ResourceVersion {
 				// Periodic resync will send update events for all known Deployments.
 				// Two different versions of the same Deployment will always have different RVs.
 				return
@@ -270,6 +378,71 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return err
 	}
 
+	// --- PV & PVC ---
+	var pubList1 []pvcItem
+	var priList1 []pvcItem
+
+	for idx, dataEntry := range devWorkspace.Spec.Data.Entries {
+		//pv
+		pvName := formatPvName(devWorkspace, &dataEntry, idx)
+		if pvName == "" {
+			utilruntime.HandleError(fmt.Errorf("%s: pv name must be specified", key))
+			return nil
+		}
+		pv, err := c.pvLister.Get(pvName)
+		if errors.IsNotFound(err) {
+			pv, err = c.kubeclientset.CoreV1().PersistentVolumes().Create(
+				context.TODO(),
+				newCosPv(devWorkspace, &dataEntry, idx),
+				metav1.CreateOptions{})
+		}
+		if err != nil {
+			return err
+		}
+		if !metav1.IsControlledBy(pv, devWorkspace) {
+			msg := fmt.Sprintf(MessageResourceExists, pv.Name)
+			c.recorder.Event(devWorkspace, corev1.EventTypeWarning, ErrResourceExists, msg)
+			return fmt.Errorf("%s", msg)
+		}
+		//pvc
+		pvcName := formatPvcName(devWorkspace, &dataEntry, idx)
+		if pvcName == "" {
+			utilruntime.HandleError(fmt.Errorf("%s: pvc name must be specified", key))
+			return nil
+		}
+		pvc, err := c.pvcLister.PersistentVolumeClaims(devWorkspace.Namespace).Get(pvcName)
+		if errors.IsNotFound(err) {
+			pvc, err = c.kubeclientset.CoreV1().PersistentVolumeClaims(devWorkspace.Namespace).Create(
+				context.TODO(),
+				newPvc(devWorkspace, &dataEntry, idx),
+				metav1.CreateOptions{})
+		}
+		if err != nil {
+			return err
+		}
+		if !metav1.IsControlledBy(pvc, devWorkspace) {
+			msg := fmt.Sprintf(MessageResourceExists, pvc.Name)
+			c.recorder.Event(devWorkspace, corev1.EventTypeWarning, ErrResourceExists, msg)
+			return fmt.Errorf("%s", msg)
+		}
+
+		pvcItem1 := pvcItem{
+			pvcName:      pvcName,
+			fileName:     dataEntry.OssName,
+			fileShowName: dataEntry.RealName,
+		}
+		if dataEntry.FileSecurityLevel == "public" || dataEntry.FileSecurityLevel == "exclusive" {
+			pubList1 = append(pubList1, pvcItem1)
+		} else if dataEntry.FileSecurityLevel == "private" {
+			priList1 = append(priList1, pvcItem1)
+		}
+	}
+	pvcInfo1 := pvcInfo{
+		pubList: pubList1,
+		priList: priList1,
+	}
+
+	// --- Deploy ---
 	deplName := devWorkspace.Spec.Workspace.DeploymentName
 	if deplName == "" {
 		// We choose to absorb the error here as the worker would requeue the
@@ -278,24 +451,21 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		utilruntime.HandleError(fmt.Errorf("%s: deployment name must be specified", key))
 		return nil
 	}
-
 	// Get the deployment with the name specified in DevWorkspace.spec
 	deployment, err := c.deploymentsLister.Deployments(devWorkspace.Namespace).Get(deplName)
 	// If the resource doesn't exist, we'll create it
 	if errors.IsNotFound(err) {
 		deployment, err = c.kubeclientset.AppsV1().Deployments(devWorkspace.Namespace).Create(
 			context.TODO(),
-			newDeployment(devWorkspace),
+			newDeployment(devWorkspace, pvcInfo1),
 			metav1.CreateOptions{})
 	}
-
 	// If an error occurs during Get/Create, we'll requeue the item, so we can
 	// attempt processing again later. This could have been caused by a
 	// temporary network failure, or any other transient reason.
 	if err != nil {
 		return err
 	}
-
 	// If the Deployment is not controlled by this DevWorkspace resource, we should log
 	// a warning to the event recorder and return error msg.
 	if !metav1.IsControlledBy(deployment, devWorkspace) {
@@ -304,7 +474,54 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return fmt.Errorf("%s", msg)
 	}
 
-	logger.V(4).Info("Get/Create deployment resource", "currentReplicas", "🐼")
+	// --- Service ---
+	svcName := devWorkspace.Spec.Workspace.ServiceName
+	if svcName == "" {
+		utilruntime.HandleError(fmt.Errorf("%s: service name must be specified", key))
+		return nil
+	}
+	service, err := c.serviceLister.Services(devWorkspace.Namespace).Get(svcName)
+	if errors.IsNotFound(err) {
+		service, err = c.kubeclientset.CoreV1().Services(devWorkspace.Namespace).Create(
+			context.TODO(),
+			newService(devWorkspace),
+			metav1.CreateOptions{})
+	}
+	if err != nil {
+		return err
+	}
+	if !metav1.IsControlledBy(service, devWorkspace) {
+		msg := fmt.Sprintf(MessageResourceExists, service.Name)
+		c.recorder.Event(devWorkspace, corev1.EventTypeWarning, ErrResourceExists, msg)
+		return fmt.Errorf("%s", msg)
+	}
+
+	// --- Ingress ---
+	ingName := devWorkspace.Spec.Workspace.IngressName
+	if ingName == "" {
+		utilruntime.HandleError(fmt.Errorf("%s: ingress name must be specified", key))
+		return nil
+	}
+	ingress, err := c.ingressLister.Ingresses(devWorkspace.Namespace).Get(ingName)
+	if errors.IsNotFound(err) {
+		ingress, err = c.kubeclientset.NetworkingV1().Ingresses(devWorkspace.Namespace).Create(
+			context.TODO(),
+			newIngress(devWorkspace),
+			metav1.CreateOptions{})
+	}
+	if err != nil {
+		return err
+	}
+	if !metav1.IsControlledBy(ingress, devWorkspace) {
+		msg := fmt.Sprintf(MessageResourceExists, ingress.Name)
+		c.recorder.Event(devWorkspace, corev1.EventTypeWarning, ErrResourceExists, msg)
+		return fmt.Errorf("%s", msg)
+	}
+
+	logger.V(4).Info("create devworkspace resource",
+		"deploy", deployment.Name,
+		"service", service.Name,
+		"ingress", ingress.Name)
 
 	// If this number of the replicas on the Foo resource is specified, and the
 	// number does not equal the current desired replicas on the Deployment, we
@@ -407,45 +624,6 @@ func (c *Controller) handleObject(obj interface{}) {
 	}
 }
 
-// newDeployment creates a new Deployment for a DevWorkspace resource. It also sets
-// the appropriate OwnerReferences on the resource so handleObject can discover
-// the DevWorkspace resource that 'owns' it.
-func newDeployment(devWorkspace *ezv1.DevWorkspace) *appsv1.Deployment {
-	labels := map[string]string{
-		"app":        "nginx",
-		"controller": devWorkspace.Name,
-	}
-
-	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      devWorkspace.Spec.Workspace.DeploymentName,
-			Namespace: devWorkspace.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(devWorkspace, ezv1.SchemeGroupVersion.WithKind(devWorkspaceKind)),
-			},
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: int32Ptr(1),
-			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "nginx",
-							Image: "nginx:latest",
-						},
-					},
-				},
-			},
-		},
-	}
-}
-
 func newNamespace(devWorkspace *ezv1.DevWorkspace) *corev1.Namespace {
 	return &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -454,7 +632,7 @@ func newNamespace(devWorkspace *ezv1.DevWorkspace) *corev1.Namespace {
 	}
 }
 
-func pvName(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) string {
+func formatPvName(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) string {
 	var type1 string
 
 	switch dataEntry.FileSecurityLevel {
@@ -470,7 +648,7 @@ func pvName(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSe
 
 	return fmt.Sprintf("pv-%v-%v-%v", devWorkspace.Spec.Task.Tid, type1, dataSeq)
 }
-func pvcName(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) string {
+func formatPvcName(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) string {
 	var type1 string
 
 	switch dataEntry.FileSecurityLevel {
@@ -489,7 +667,7 @@ func pvcName(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataS
 
 func newCosPv(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) *corev1.PersistentVolume {
 	volumeMode := corev1.PersistentVolumeFilesystem
-	pvName1 := pvName(devWorkspace, dataEntry, dataSeq)
+	pvName1 := formatPvName(devWorkspace, dataEntry, dataSeq)
 
 	return &corev1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -524,8 +702,8 @@ func newCosPv(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, data
 }
 
 func newPvc(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) *corev1.PersistentVolumeClaim {
-	pvcName1 := pvcName(devWorkspace, dataEntry, dataSeq)
-	pvName1 := pvName(devWorkspace, dataEntry, dataSeq)
+	pvcName1 := formatPvcName(devWorkspace, dataEntry, dataSeq)
+	pvName1 := formatPvName(devWorkspace, dataEntry, dataSeq)
 	storageClassName := ""
 
 	return &corev1.PersistentVolumeClaim{
@@ -547,11 +725,14 @@ func newPvc(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSe
 	}
 }
 
-func volumeName(pvcName1 string) string {
+func formatVolumeName(pvcName1 string) string {
 	return fmt.Sprintf("vol-%v", pvcName1)
 }
 
-func newDepl(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Deployment {
+// newDeployment creates a new Deployment for a DevWorkspace resource. It also sets
+// the appropriate OwnerReferences on the resource so handleObject can discover
+// the DevWorkspace resource that 'owns' it.
+func newDeployment(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Deployment {
 	// 准备 volumes 和 volumeMounts
 	var vols []corev1.Volume
 	var volMnts []corev1.VolumeMount
@@ -561,7 +742,7 @@ func newDepl(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Deploymen
 
 	// public 数据
 	for _, item := range pvcinfo.pubList {
-		volName = volumeName(item.pvcName)
+		volName = formatVolumeName(item.pvcName)
 
 		vol = corev1.Volume{
 			Name: volName,
@@ -584,7 +765,7 @@ func newDepl(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Deploymen
 	}
 	// private 数据
 	for _, item := range pvcinfo.priList {
-		volName = volumeName(item.pvcName)
+		volName = formatVolumeName(item.pvcName)
 
 		vol = corev1.Volume{
 			Name: volName,
@@ -634,7 +815,7 @@ func newDepl(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Deploymen
 					Containers: []corev1.Container{
 						{
 							Name:            fmt.Sprintf("%v-container-1", devWorkspace.Spec.Workspace.DeploymentName),
-							Image:           "mirrordust/code:v0.2.0",
+							Image:           devWorkspace.Spec.Workspace.Image,
 							ImagePullPolicy: corev1.PullAlways,
 							Ports: []corev1.ContainerPort{
 								{
@@ -744,4 +925,137 @@ type pvcItem struct {
 	pvcName      string
 	fileName     string
 	fileShowName string
+}
+
+func CreateDevWorkspace(workspaceId string, wsc schemas.Workspace) error {
+	dws := newDevWorkspace(wsc)
+
+	ns, err := kubeClient.CoreV1().Namespaces().Create(context.TODO(), newNamespace(dws), metav1.CreateOptions{})
+	if err != nil {
+		if !errors.IsAlreadyExists(err) {
+			log.Println("Create namespace error:")
+			log.Println(err.Error())
+			return err
+		}
+	}
+	log.Printf("namespace: %v", ns.Name)
+
+	devWorkspace, err := ezClient.StableV1().DevWorkspaces(dws.Spec.Workspace.NamespaceName).Create(
+		context.TODO(),
+		dws,
+		metav1.CreateOptions{},
+	)
+
+	if err != nil {
+		log.Println("CreateDevWorkspace error:")
+		log.Println(err.Error())
+		return err
+	}
+
+	log.Println("CreateDevWorkspace success: devWorkspace->name")
+	log.Println(devWorkspace.Name)
+	return nil
+}
+
+func newDevWorkspace(workspaceCreate schemas.Workspace) *ezv1.DevWorkspace {
+	var dataEntries []ezv1.EzDataEntry
+
+	for _, dataItem := range workspaceCreate.Data.Public {
+		entry := ezv1.EzDataEntry{
+			FileSecurityLevel: "public",
+			RealName:          dataItem.RealName,
+			OssBucket:         dataItem.Bucket,
+			OssPath:           dataItem.Path,
+			OssName:           dataItem.Name,
+		}
+		dataEntries = append(dataEntries, entry)
+	}
+
+	for _, dataItem := range workspaceCreate.Data.Exclusive {
+		entry := ezv1.EzDataEntry{
+			FileSecurityLevel: "exclusive",
+			RealName:          dataItem.RealName,
+			OssBucket:         dataItem.Bucket,
+			OssPath:           dataItem.Path,
+			OssName:           dataItem.Name,
+		}
+		dataEntries = append(dataEntries, entry)
+	}
+
+	for _, dataItem := range workspaceCreate.Data.Private {
+		entry := ezv1.EzDataEntry{
+			FileSecurityLevel: "private",
+			RealName:          dataItem.RealName,
+			OssBucket:         dataItem.Bucket,
+			OssPath:           dataItem.Path,
+			OssName:           dataItem.Name,
+		}
+		dataEntries = append(dataEntries, entry)
+	}
+
+	return &ezv1.DevWorkspace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      formatDevWorkspaceName(workspaceCreate.Task.Id),
+			Namespace: formatNamespaceName(workspaceCreate.Task.Id),
+		},
+		Spec: ezv1.DevWorkspaceSpec{
+			Task: ezv1.EzTask{
+				Tid:  workspaceCreate.Task.Id,
+				Name: workspaceCreate.Task.Name,
+				Desc: "",
+			},
+			Data: ezv1.EzData{Entries: dataEntries},
+			Workspace: ezv1.EzWorkspace{
+				CpuRequest:     workspaceCreate.Spec.CpuRequest,
+				CpuLimit:       workspaceCreate.Spec.CpuLimit,
+				MemRequest:     workspaceCreate.Spec.MemRequest,
+				MemLimit:       workspaceCreate.Spec.MemLimit,
+				DiskSize:       0,
+				Image:          "mirrordust/code:v0.2.0",
+				NamespaceName:  formatNamespaceName(workspaceCreate.Task.Id),
+				DeploymentName: formatDeployName(workspaceCreate.Task.Id),
+				ServiceName:    formatServiceName(workspaceCreate.Task.Id),
+				IngressName:    formatIngressName(workspaceCreate.Task.Id),
+				Env: []ezv1.EzWorkspaceEnv{ //TODO:暂时没使用到，在deploy里写死
+					{
+						Name:  "TASKID",
+						Value: workspaceCreate.Task.Id,
+					},
+				},
+			},
+		},
+	}
+}
+
+func QueryWorkspaceStatus(in *repo.Workspace) (out *repo.Workspace) {
+	namespaceName := formatNamespaceName(in.TaskId)
+	ingressName := formatIngressName(in.TaskId)
+
+	out = in
+
+	ingress, err := kubeClient.NetworkingV1().Ingresses(namespaceName).Get(
+		context.TODO(), ingressName, metav1.GetOptions{})
+	if err != nil {
+		log.Println("checkIngressReady error:")
+		log.Println(err.Error())
+		// 出错直接返回，状态不变
+		return out
+	}
+
+	// 检查 Ingress 的状态条件
+	for _, ing := range ingress.Status.LoadBalancer.Ingress {
+		// 有任意一个ip则表示ingress就绪了
+		if ing.IP != "" || ing.Hostname != "" {
+			out.Url = ingress.Spec.Rules[0].Host
+			out.State = "ready"
+			log.Printf("ingress state=%v", out.State)
+			return out
+		}
+	}
+
+	// 否则表示ingress未就绪
+	out.Url = "none"
+	out.State = "creating"
+	log.Printf("ingress state=%v", out.State)
+	return out
 }

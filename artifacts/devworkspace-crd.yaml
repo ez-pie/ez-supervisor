@@ -80,14 +80,14 @@ spec:
                   properties:
                     # CPU
                     cpuRequest:
-                      type: integer
+                      type: string
                     cpuLimit:
-                      type: integer
+                      type: string
                     # 内存
                     memRequest:
-                      type: integer
+                      type: string
                     memLimit:
-                      type: integer
+                      type: string
                     # 硬盘
                     diskSize:
                       type: integer

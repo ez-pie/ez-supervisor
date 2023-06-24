@@ -19,6 +19,26 @@ import (
 	// _ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 )
 
+func formatNamespaceName(taskId string) string {
+	return "ezpie"
+}
+
+func formatDevWorkspaceName(taskId string) string {
+	return fmt.Sprintf("devworkspace-%v", taskId)
+}
+
+func formatDeployName(taskId string) string {
+	return fmt.Sprintf("deployment-%v", taskId)
+}
+
+func formatServiceName(taskId string) string {
+	return fmt.Sprintf("service-%v", taskId)
+}
+
+func formatIngressName(taskId string) string {
+	return fmt.Sprintf("ingress-%v", taskId)
+}
+
 func StopWorkspace(workspaceId uint) error {
 	deployName1 := deployName(workspaceId)
 	deploymentsClient := kubeClient.AppsV1().Deployments("ezpie")

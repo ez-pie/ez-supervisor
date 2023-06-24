@@ -1,13 +1,17 @@
 package main
 
 import (
-	"github.com/ez-pie/ez-supervisor/manage"
-	"github.com/ez-pie/ez-supervisor/repo"
-	"github.com/ez-pie/ez-supervisor/timeout"
-	"github.com/gin-gonic/gin"
 	"log"
 	"net/http"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/ez-pie/ez-supervisor/kubernetes"
+	"github.com/ez-pie/ez-supervisor/manage"
+	"github.com/ez-pie/ez-supervisor/repo"
+	"github.com/ez-pie/ez-supervisor/schemas"
+	"github.com/ez-pie/ez-supervisor/timeout"
 )
 
 func main() {
@@ -24,21 +28,88 @@ func main() {
 	w1 := r.Group("/workspace")
 	{
 		w1.POST("/create", func(c *gin.Context) {
-			c.JSON(http.StatusCreated, gin.H{"create": "ok"})
+			var workspaceCreate schemas.Workspace
+
+			if err := c.ShouldBindJSON(&workspaceCreate); err != nil {
+				log.Println(err.Error())
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			//检查是否以创建
+			wsModel1 := repo.GetWorkspaceByTask(workspaceCreate.Task.Id)
+			if wsModel1.TaskId != "" {
+				//已有则直接返回
+				wsModel1 = *kubernetes.QueryWorkspaceStatus(&wsModel1)
+				ret := repo.UpdateWorkspace(wsModel1)
+				wsInfo1 := schemas.WorkspaceInfo{
+					Id:     ret.ID,
+					State:  ret.State,
+					Url:    ret.Url,
+					Token:  ret.Token,
+					TaskId: ret.TaskId,
+				}
+				c.JSON(http.StatusOK, wsInfo1)
+				return
+			}
+
+			//数据库里新建表项
+			wsModel := repo.Workspace{
+				TaskId: workspaceCreate.Task.Id,
+			}
+			ret := repo.CreateWorkspace(wsModel)
+			wsInfo := schemas.WorkspaceInfo{
+				Id:     ret.ID,
+				State:  ret.State,
+				Url:    ret.Url,
+				Token:  ret.Token,
+				TaskId: ret.TaskId,
+			}
+			//创建k8s资源
+			err2 := kubernetes.CreateDevWorkspace(strconv.Itoa(int(ret.ID)), workspaceCreate)
+			if err2 != nil {
+				log.Println(err2.Error())
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err2.Error()})
+				return
+			}
+
+			c.JSON(http.StatusCreated, wsInfo)
 		})
 
 		w1.GET("/get/:workspace_id", func(c *gin.Context) {
-			workspaceId := c.Param("workspace_id")
-			c.JSON(http.StatusOK, gin.H{"workspace_id": workspaceId})
+			wid := c.Param("workspace_id")
+			u64, _ := strconv.ParseUint(wid, 10, 32)
+			wsModel := repo.GetWorkspace(uint(u64))
+			wsModel = *kubernetes.QueryWorkspaceStatus(&wsModel)
+			ret := repo.UpdateWorkspace(wsModel)
+			wsInfo := schemas.WorkspaceInfo{
+				Id:     ret.ID,
+				State:  ret.State,
+				Url:    ret.Url,
+				Token:  ret.Token,
+				TaskId: ret.TaskId,
+			}
+			c.JSON(http.StatusOK, wsInfo)
 		})
 
 		w1.GET("/getbytask/:task_id", func(c *gin.Context) {
-			taskId := c.Param("task_id")
-			c.JSON(http.StatusOK, gin.H{"task_id": taskId})
+			tid := c.Param("task_id")
+			wsModel := repo.GetWorkspaceByTask(tid)
+			wsModel = *kubernetes.QueryWorkspaceStatus(&wsModel)
+			ret := repo.UpdateWorkspace(wsModel)
+			wsInfo := schemas.WorkspaceInfo{
+				Id:     ret.ID,
+				State:  ret.State,
+				Url:    ret.Url,
+				Token:  ret.Token,
+				TaskId: ret.TaskId,
+			}
+			c.JSON(http.StatusOK, wsInfo)
 		})
 
 		w1.GET("/list", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"list": "ok"})
+			wsModels := repo.GetWorkspaceList(0, 100)
+			c.JSON(http.StatusOK, wsModels)
 		})
 
 		//w1.POST("/shutdown/:workspace_id", func(c *gin.Context) {
