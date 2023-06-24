@@ -202,10 +202,11 @@ func main() {
 				return
 			}
 
-			// 先结束当前里程碑的计时，更新最后一段时间
+			// 先更新当前里程碑的计时，如果要切换到下一个里程碑，本次即当前里程碑的最后一段时间
 			timeout.UpdateWorkspaceTimeByTaskId(workMileUpdate.TaskId)
 
-			// 同步里程碑 id（切换到下一个里程碑 id）
+			// 同步里程碑 id（切换到下一个里程碑 id），如果 NextMileId 为0，则表示没有下一个里程碑了，此时不再切换
+			// TODO: 如果 ezpie 以本次返回的时间为最后一次里程碑的时间，则会和 workstation 计时不一致，workstation 后续还会继续计时
 			wsModel.CurrentMilestoneId = workMileUpdate.NextMilestoneId
 			repo.UpdateWorkspace(wsModel)
 
