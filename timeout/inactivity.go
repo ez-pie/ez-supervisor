@@ -2,18 +2,21 @@ package timeout
 
 import (
 	"fmt"
-	"github.com/ez-pie/ez-supervisor/kubernetes"
-	"github.com/ez-pie/ez-supervisor/repo"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/ez-pie/ez-supervisor/kubernetes"
+	"github.com/ez-pie/ez-supervisor/repo"
 )
 
-var (
-	global_workspaceList []inactivityIdleManagerEntry
-)
+var globalWorkspaceList []inactivityIdleManagerEntry
+
+// TODO 调整时间
+var idleTimeout = 3 * 60 * time.Second
+var stopRetryPeriod = 10 * time.Second
 
 // InactivityIdleManager manage all workspace
 type InactivityIdleManager interface {
@@ -35,7 +38,7 @@ type inactivityIdleManagerImpl struct {
 }
 
 func (m inactivityIdleManagerImpl) Add(workspaceId uint) {
-	w, err := newInactivityIdleManagerEntry(workspaceId, 3*60*time.Second, 10*time.Second)
+	w, err := newInactivityIdleManagerEntry(workspaceId, idleTimeout, stopRetryPeriod)
 	if err != nil {
 		log.Fatal("Unable to create activity manager. Cause: ", err.Error())
 		return
@@ -45,15 +48,16 @@ func (m inactivityIdleManagerImpl) Add(workspaceId uint) {
 	m.workspaceList = append(m.workspaceList, w)
 	log.Println("after:", m.workspaceList)
 
-	log.Println("before global", global_workspaceList)
-	global_workspaceList = append(global_workspaceList, w)
-	log.Println("after global", global_workspaceList)
+	log.Println("before global", globalWorkspaceList)
+	globalWorkspaceList = append(globalWorkspaceList, w)
+	log.Println("after global", globalWorkspaceList)
 
 	//TODO: move the another place
-	taskId := kubernetes.TaskIdByWorkspaceId(workspaceId)
+	taskId, mileId := kubernetes.TaskAndMilestoneIdByWorkspaceId(workspaceId)
 	wss := repo.WorkspaceStats{
 		WorkspaceId: workspaceId,
 		TaskId:      taskId,
+		MilestoneId: mileId,
 		StartTime:   time.Now().Unix(),
 	}
 	repo.GetOrCreateWorkspaceStatsByWorkspaceId(wss)
@@ -64,7 +68,7 @@ func (m inactivityIdleManagerImpl) Add(workspaceId uint) {
 }
 
 func (m inactivityIdleManagerImpl) Tick(workspaceId uint) {
-	for _, workspace := range global_workspaceList {
+	for _, workspace := range globalWorkspaceList {
 		if workspace.id() == workspaceId {
 			log.Printf("tick activity manager for workspaceId=%d", workspaceId)
 			workspace.tick()
@@ -74,10 +78,10 @@ func (m inactivityIdleManagerImpl) Tick(workspaceId uint) {
 
 func (m inactivityIdleManagerImpl) Show() string {
 	log.Println("show:", m.workspaceList)
-	log.Println("show global:", global_workspaceList)
+	log.Println("show global:", globalWorkspaceList)
 
 	str := ""
-	for i, workspace := range global_workspaceList {
+	for i, workspace := range globalWorkspaceList {
 		str += fmt.Sprintf("i=%v -> wid=%v", i, workspace.id())
 	}
 	return str
@@ -140,6 +144,8 @@ func (m inactivityIdleManagerEntryImpl) start() {
 				}
 			case <-m.activityC:
 				log.Println("Activity is reported. Resetting timer")
+				UpdateWorkspaceTimeByWorkspaceId(m.workspaceId)
+
 				if !timer.Stop() {
 					<-timer.C
 				}

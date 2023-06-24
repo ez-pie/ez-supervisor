@@ -19,9 +19,29 @@ import (
 	// _ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 )
 
+func formatNamespaceName(taskId string) string {
+	return "ezpie"
+}
+
+func formatDevWorkspaceName(taskId string) string {
+	return fmt.Sprintf("devworkspace-%v", taskId)
+}
+
+func formatDeployName(taskId string) string {
+	return fmt.Sprintf("deployment-%v", taskId)
+}
+
+func formatServiceName(taskId string) string {
+	return fmt.Sprintf("service-%v", taskId)
+}
+
+func formatIngressName(taskId string) string {
+	return fmt.Sprintf("ingress-%v", taskId)
+}
+
 func StopWorkspace(workspaceId uint) error {
 	deployName1 := deployName(workspaceId)
-	deploymentsClient := ClientSet.AppsV1().Deployments("ezpie")
+	deploymentsClient := kubeClient.AppsV1().Deployments("ezpie")
 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Retrieve the latest version of Deployment before attempting update
@@ -46,7 +66,7 @@ func StopWorkspace(workspaceId uint) error {
 
 func ReopenWorkspace(workspaceId uint) error {
 	deployName1 := deployName(workspaceId)
-	deploymentsClient := ClientSet.AppsV1().Deployments("ezpie")
+	deploymentsClient := kubeClient.AppsV1().Deployments("ezpie")
 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Retrieve the latest version of Deployment before attempting update
@@ -77,6 +97,13 @@ func deployName(workspaceId uint) string {
 func TaskIdByWorkspaceId(workspaceId uint) string {
 	taskId := repo.GetWorkspace(workspaceId).TaskId
 	return taskId
+}
+
+func TaskAndMilestoneIdByWorkspaceId(workspaceId uint) (taskId, milestoneId string) {
+	a := repo.GetWorkspace(workspaceId)
+	taskId = a.TaskId
+	milestoneId = a.CurrentMilestoneId
+	return taskId, milestoneId
 }
 
 func int32Ptr(i int32) *int32 { return &i }

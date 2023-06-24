@@ -1,16 +1,19 @@
 package repo
 
 import (
-	"gorm.io/gorm"
 	"log"
+
+	"gorm.io/gorm"
 )
 
 type Workspace struct {
 	gorm.Model
-	TaskId string `gorm:"index"`
-	State  string
-	Url    string
-	Token  string
+	TaskId             string `gorm:"index"`
+	State              string
+	Url                string
+	Token              string
+	CurrentMilestoneId string
+	LastMilestoneId    string
 }
 
 func GetWorkspace(id uint) Workspace {

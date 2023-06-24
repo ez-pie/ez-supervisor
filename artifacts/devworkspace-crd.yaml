@@ -1,0 +1,158 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  # 名字必需与下面的 spec 字段匹配，并且格式为 '<名称的复数形式>.<组名>'
+  name: devworkspaces.stable.ezpie.ai
+spec:
+  # 组名称，用于 REST API: /apis/<组>/<版本>
+  group: stable.ezpie.ai
+  # 可以是 Namespaced 或 Cluster
+  scope: Namespaced
+  names:
+    # 名称的复数形式，用于 URL：/apis/<组>/<版本>/<名称的复数形式>
+    plural: devworkspaces
+    # 名称的单数形式，作为命令行使用时和显示时的别名
+    singular: devworkspace
+    # kind 通常是单数形式的驼峰命名（CamelCased）形式。你的资源清单会使用这一形式。
+    kind: DevWorkspace
+    # shortNames 允许你在命令行使用较短的字符串来匹配资源
+    shortNames:
+      - dws
+    # categories 是定制资源所归属的分类资源列表
+    categories:
+      - all
+  # 列举此 CustomResourceDefinition 所支持的版本
+  versions:
+    - name: v1
+      # 每个版本都可以通过 served 标志来独立启用或禁止
+      served: true
+      # 其中一个且只有一个版本必需被标记为存储版本
+      storage: true
+      schema:
+        # schema used for validation
+        openAPIV3Schema:
+          type: object
+          properties:
+            # spec 定义
+            spec:
+              type: object
+              properties:
+                # spec 定义开始
+                # task 相关定义
+                task:
+                  type: object
+                  properties:
+                    tid:
+                      type: string
+                    name:
+                      type: string
+                    desc:
+                      type: string
+                  required:
+                    - tid
+                # 数据相关定义
+                data:
+                  type: object
+                  properties:
+                    entries:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          # public/exclusive/private
+                          fileSecurityLevel:
+                            type: string
+                          # 文件显示的名字（上传时的原始文件名）
+                          realName:
+                            type: string
+                          # 对象存储桶
+                          ossBucket:
+                            type: string
+                          # 对象存储路径
+                          ossPath:
+                            type: string
+                          # 对象存储文件名
+                          ossName:
+                            type: string
+                # workspace 环境定义
+                workspace:
+                  type: object
+                  properties:
+                    # CPU
+                    cpuRequest:
+                      type: string
+                    cpuLimit:
+                      type: string
+                    # 内存
+                    memRequest:
+                      type: string
+                    memLimit:
+                      type: string
+                    # 硬盘
+                    diskSize:
+                      type: integer
+                    # IDE 选择
+                    image:
+                      type: string
+                    # deployment/service/ingress
+                    namespaceName:
+                      type: string
+                    deploymentName:
+                      type: string
+                    serviceName:
+                      type: string
+                    ingressName:
+                      type: string
+                    # 环境变量
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                  required:
+                    - cpuLimit
+                    - memLimit
+                    - diskSize
+                    - image
+                    - namespaceName
+                    - deploymentName
+                    - serviceName
+                    - ingressName
+            # status 定义
+            status:
+              type: object
+              properties:
+                # status 定义开始
+                devWorkspaceStatus:
+                  type: string
+                availableReplicas:
+                  type: integer
+      # subresources for the custom resource
+      subresources:
+        # enables the status subresource
+        status: { }
+      additionalPrinterColumns:
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+        - name: Deploy
+          type: string
+          jsonPath: .spec.workspace.deploymentName
+        - name: Service
+          type: string
+          jsonPath: .spec.workspace.serviceName
+        - name: Ingress
+          type: string
+          jsonPath: .spec.workspace.ingressName
+        - name: Status
+          type: string
+          jsonPath: .status.devWorkspaceStatus
+        - name: R
+          type: integer
+          jsonPath: .status.availableReplicas
+          # 优先级默认为 0，大于 0 的列只会在宽视图（使用 -o wide 标志）中显示
+          priority: 1
