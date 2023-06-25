@@ -1207,7 +1207,7 @@ func newDevWorkspace(workspaceCreate schemas.Workspace) *ezv1.DevWorkspace {
 				MemRequest:     workspaceCreate.Spec.MemRequest,
 				MemLimit:       workspaceCreate.Spec.MemLimit,
 				DiskSize:       0,
-				Image:          "mirrordust/code:v0.2.0",
+				Image:          "mirrordust/code:v0.3.0",
 				NamespaceName:  formatNamespaceName(workspaceCreate.Task.Id),
 				DeploymentName: formatDeployName(workspaceCreate.Task.Id),
 				ServiceName:    formatServiceName(workspaceCreate.Task.Id),
