@@ -786,6 +786,7 @@ func formatVolumeName(pvcName1 string) string {
 func newDeployment(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Deployment {
 	// 准备 volumes 和 volumeMounts
 	// 由于一定会挂载数据盘，所以初始时直接加入 data pvc
+	log.Println("================= PVC DATA")
 	dataPvcName := formatDataPvcName(devWorkspace)
 	volName := formatVolumeName(dataPvcName)
 	vols := []corev1.Volume{
@@ -854,6 +855,10 @@ func newDeployment(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Dep
 		}
 		volMnts = append(volMnts, volMnt)
 	}
+
+	fmt.Println(vols)
+	fmt.Println(volMnts)
+	log.Println("============ PV/PVC 🐸🐸🐸")
 
 	labels := map[string]string{
 		"ezpie-app": devWorkspace.Spec.Workspace.DeploymentName,
