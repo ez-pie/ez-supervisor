@@ -378,6 +378,28 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return err
 	}
 
+	// data PVC，PV由 StorageClass 自动分配
+	dpName := formatDataPvcName(devWorkspace)
+	if dpName == "" {
+		utilruntime.HandleError(fmt.Errorf("%s: data pvc name must be specified", key))
+		return nil
+	}
+	dataPvc, err := c.pvcLister.PersistentVolumeClaims(devWorkspace.Namespace).Get(dpName)
+	if errors.IsNotFound(err) {
+		dataPvc, err = c.kubeclientset.CoreV1().PersistentVolumeClaims(devWorkspace.Namespace).Create(
+			context.TODO(),
+			newDataPvc(devWorkspace),
+			metav1.CreateOptions{})
+	}
+	if err != nil {
+		return err
+	}
+	if !metav1.IsControlledBy(dataPvc, devWorkspace) {
+		msg := fmt.Sprintf(MessageResourceExists, dataPvc.Name)
+		c.recorder.Event(devWorkspace, corev1.EventTypeWarning, ErrResourceExists, msg)
+		return fmt.Errorf("%s", msg)
+	}
+
 	// --- PV & PVC ---
 	var pubList1 []pvcItem
 	var priList1 []pvcItem
@@ -648,6 +670,7 @@ func formatPvName(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, 
 
 	return fmt.Sprintf("pv-%v-%v-%v", devWorkspace.Spec.Task.Tid, type1, dataSeq)
 }
+
 func formatPvcName(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) string {
 	var type1 string
 
@@ -663,6 +686,10 @@ func formatPvcName(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry,
 	}
 
 	return fmt.Sprintf("pvc-%v-%v-%v", devWorkspace.Spec.Task.Tid, type1, dataSeq)
+}
+
+func formatDataPvcName(devWorkspace *ezv1.DevWorkspace) string {
+	return fmt.Sprintf("pvc-data-%v", devWorkspace.Spec.Task.Tid)
 }
 
 func newCosPv(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) *corev1.PersistentVolume {
@@ -725,6 +752,30 @@ func newPvc(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSe
 	}
 }
 
+func newDataPvc(devWorkspace *ezv1.DevWorkspace) *corev1.PersistentVolumeClaim {
+	storageClassName := "cbs-test" // 根据腾讯云创建的名字决定
+	dataName := formatDataPvcName(devWorkspace)
+	volumeMode := corev1.PersistentVolumeFilesystem
+
+	return &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      dataName,
+			Namespace: devWorkspace.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(devWorkspace, ezv1.SchemeGroupVersion.WithKind(devWorkspaceKind)),
+			},
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")},
+			},
+			StorageClassName: &storageClassName,
+			VolumeMode:       &volumeMode,
+		},
+	}
+}
+
 func formatVolumeName(pvcName1 string) string {
 	return fmt.Sprintf("vol-%v", pvcName1)
 }
@@ -734,11 +785,29 @@ func formatVolumeName(pvcName1 string) string {
 // the DevWorkspace resource that 'owns' it.
 func newDeployment(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Deployment {
 	// 准备 volumes 和 volumeMounts
-	var vols []corev1.Volume
-	var volMnts []corev1.VolumeMount
+	// 由于一定会挂载数据盘，所以初始时直接加入 data pvc
+	log.Println("================= PVC DATA")
+	dataPvcName := formatDataPvcName(devWorkspace)
+	volName := formatVolumeName(dataPvcName)
+	vols := []corev1.Volume{
+		{
+			Name: volName,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: dataPvcName,
+				},
+			},
+		},
+	}
+	volMnts := []corev1.VolumeMount{
+		{
+			Name:      volName,
+			MountPath: "/home/workspace", // TODO: 定义常量
+		},
+	}
+
 	var vol corev1.Volume
 	var volMnt corev1.VolumeMount
-	var volName string
 
 	// public 数据
 	for _, item := range pvcinfo.pubList {
@@ -786,6 +855,10 @@ func newDeployment(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Dep
 		}
 		volMnts = append(volMnts, volMnt)
 	}
+
+	fmt.Println(vols)
+	fmt.Println(volMnts)
+	log.Println("============ PV/PVC 🐸🐸🐸")
 
 	labels := map[string]string{
 		"ezpie-app": devWorkspace.Spec.Workspace.DeploymentName,
