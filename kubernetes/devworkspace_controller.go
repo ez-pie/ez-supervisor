@@ -404,6 +404,51 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	var pubList1 []pvcItem
 	var priList1 []pvcItem
 
+	// artifacts out 数据
+	//pv out
+	pvOutName := formatOutPvName(devWorkspace)
+	if pvOutName == "" {
+		utilruntime.HandleError(fmt.Errorf("%s: pv out name must be specified", key))
+		return nil
+	}
+	pvOut, err := c.pvLister.Get(pvOutName)
+	if errors.IsNotFound(err) {
+		pvOut, err = c.kubeclientset.CoreV1().PersistentVolumes().Create(
+			context.TODO(),
+			newOutPv(devWorkspace),
+			metav1.CreateOptions{})
+	}
+	if err != nil {
+		return err
+	}
+	if !metav1.IsControlledBy(pvOut, devWorkspace) {
+		msg := fmt.Sprintf(MessageResourceExists, pvOut.Name)
+		c.recorder.Event(devWorkspace, corev1.EventTypeWarning, ErrResourceExists, msg)
+		return fmt.Errorf("%s", msg)
+	}
+	// pvc out
+	pvcOutName := formatOutPvcName(devWorkspace)
+	if pvcOutName == "" {
+		utilruntime.HandleError(fmt.Errorf("%s: pvc out name must be specified", key))
+		return nil
+	}
+	pvcOut, err := c.pvcLister.PersistentVolumeClaims(devWorkspace.Namespace).Get(pvcOutName)
+	if errors.IsNotFound(err) {
+		pvcOut, err = c.kubeclientset.CoreV1().PersistentVolumeClaims(devWorkspace.Namespace).Create(
+			context.TODO(),
+			newOutPvc(devWorkspace),
+			metav1.CreateOptions{})
+	}
+	if err != nil {
+		return err
+	}
+	if !metav1.IsControlledBy(pvcOut, devWorkspace) {
+		msg := fmt.Sprintf(MessageResourceExists, pvcOut.Name)
+		c.recorder.Event(devWorkspace, corev1.EventTypeWarning, ErrResourceExists, msg)
+		return fmt.Errorf("%s", msg)
+	}
+
+	// dataEntry 对应挂载的数据
 	for idx, dataEntry := range devWorkspace.Spec.Data.Entries {
 		//pv
 		pvName := formatPvName(devWorkspace, &dataEntry, idx)
@@ -654,6 +699,14 @@ func newNamespace(devWorkspace *ezv1.DevWorkspace) *corev1.Namespace {
 	}
 }
 
+func formatOutPvName(devWorkspace *ezv1.DevWorkspace) string {
+	return fmt.Sprintf("pv-out-%v", devWorkspace.Spec.Task.Tid)
+}
+
+func formatOutPvcName(devWorkspace *ezv1.DevWorkspace) string {
+	return fmt.Sprintf("pvc-out-%v", devWorkspace.Spec.Task.Tid)
+}
+
 func formatPvName(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) string {
 	var type1 string
 
@@ -692,6 +745,42 @@ func formatDataPvcName(devWorkspace *ezv1.DevWorkspace) string {
 	return fmt.Sprintf("pvc-data-%v", devWorkspace.Spec.Task.Tid)
 }
 
+func newOutPv(devWorkspace *ezv1.DevWorkspace) *corev1.PersistentVolume {
+	volumeMode := corev1.PersistentVolumeFilesystem
+	pvName1 := formatOutPvName(devWorkspace)
+
+	return &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: pvName1,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(devWorkspace, ezv1.SchemeGroupVersion.WithKind(devWorkspaceKind)),
+			},
+		},
+		Spec: corev1.PersistentVolumeSpec{
+			AccessModes:                   []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+			Capacity:                      corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")},
+			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
+			VolumeMode:                    &volumeMode,
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				CSI: &corev1.CSIPersistentVolumeSource{
+					Driver:       "com.tencent.cloud.csi.cosfs",
+					VolumeHandle: pvName1,
+					NodePublishSecretRef: &corev1.SecretReference{
+						Name:      "cos-secret",
+						Namespace: "kube-system",
+					},
+					VolumeAttributes: map[string]string{
+						"url":             "http://cos.ap-hongkong.myqcloud.com",
+						"bucket":          "workstation-test-1313546141", //TODO: 暂时写死
+						"path":            fmt.Sprintf("/artifacts/task-%v", devWorkspace.Spec.Task.Tid),
+						"additional_args": "-oensure_diskfree=20480 -oallow_other",
+					},
+				},
+			},
+		},
+	}
+}
+
 func newCosPv(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, dataSeq int) *corev1.PersistentVolume {
 	volumeMode := corev1.PersistentVolumeFilesystem
 	pvName1 := formatPvName(devWorkspace, dataEntry, dataSeq)
@@ -724,6 +813,30 @@ func newCosPv(devWorkspace *ezv1.DevWorkspace, dataEntry *ezv1.EzDataEntry, data
 					},
 				},
 			},
+		},
+	}
+}
+
+func newOutPvc(devWorkspace *ezv1.DevWorkspace) *corev1.PersistentVolumeClaim {
+	pvcName1 := formatOutPvcName(devWorkspace)
+	pvName1 := formatOutPvName(devWorkspace)
+	storageClassName := ""
+
+	return &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvcName1,
+			Namespace: devWorkspace.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(devWorkspace, ezv1.SchemeGroupVersion.WithKind(devWorkspaceKind)),
+			},
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")},
+			},
+			VolumeName:       pvName1,
+			StorageClassName: &storageClassName,
 		},
 	}
 }
@@ -785,10 +898,12 @@ func formatVolumeName(pvcName1 string) string {
 // the DevWorkspace resource that 'owns' it.
 func newDeployment(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Deployment {
 	// 准备 volumes 和 volumeMounts
-	// 由于一定会挂载数据盘，所以初始时直接加入 data pvc
-	log.Println("================= PVC DATA")
+	// 由于一定会挂载数据盘和 out，所以初始时直接加入 data pvc 和 out pvc
 	dataPvcName := formatDataPvcName(devWorkspace)
 	volName := formatVolumeName(dataPvcName)
+
+	outPvcName := formatOutPvcName(devWorkspace)
+	outVolName := formatVolumeName(outPvcName)
 	vols := []corev1.Volume{
 		{
 			Name: volName,
@@ -798,11 +913,23 @@ func newDeployment(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Dep
 				},
 			},
 		},
+		{
+			Name: outVolName,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: outPvcName,
+				},
+			},
+		},
 	}
 	volMnts := []corev1.VolumeMount{
 		{
 			Name:      volName,
 			MountPath: "/home/workspace", // TODO: 定义常量
+		},
+		{
+			Name:      outVolName,
+			MountPath: "/home/artifacts", //TODO:定义常量
 		},
 	}
 
@@ -855,10 +982,6 @@ func newDeployment(devWorkspace *ezv1.DevWorkspace, pvcinfo pvcInfo) *appsv1.Dep
 		}
 		volMnts = append(volMnts, volMnt)
 	}
-
-	fmt.Println(vols)
-	fmt.Println(volMnts)
-	log.Println("============ PV/PVC 🐸🐸🐸")
 
 	labels := map[string]string{
 		"ezpie-app": devWorkspace.Spec.Workspace.DeploymentName,
