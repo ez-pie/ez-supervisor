@@ -1,9 +1,11 @@
 name: Docker Image CI/CD
 
 on:
-  push:
-    tags:
-      - v*
+  release:
+    types: [published]
+
+permissions:
+  contents: read
 
 jobs:
   build-and-push:
@@ -14,7 +16,7 @@ jobs:
       - name: Check Details
         run: |
           echo "⏰Trigger at `date +%Y%m%d%H%M%S`"
-          echo "💡Build image with tag ${{ github.ref_name }}"
+          echo "💡Build image with ${{ github.ref_name }}"
 
       - name: Build Image
         run: |
