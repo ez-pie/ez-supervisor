@@ -1087,7 +1087,7 @@ func newIngress(devWorkspace *ezv1.DevWorkspace) *networkingv1.Ingress {
 		Spec: networkingv1.IngressSpec{
 			Rules: []networkingv1.IngressRule{
 				{
-					Host: fmt.Sprintf("workspace-%v.124.156.125.152.nip.io", devWorkspace.Spec.Task.Tid),
+					Host: fmt.Sprintf("workspace-%v.124.156.125.152.nip.io/?folder=/home/workspace", devWorkspace.Spec.Task.Tid),
 					IngressRuleValue: networkingv1.IngressRuleValue{
 						HTTP: &networkingv1.HTTPIngressRuleValue{
 							Paths: []networkingv1.HTTPIngressPath{
