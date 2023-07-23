@@ -1226,8 +1226,24 @@ func newDevWorkspace(workspaceCreate schemas.Workspace) *ezv1.DevWorkspace {
 func QueryWorkspaceStatus(in *repo.Workspace) (out *repo.Workspace) {
 	namespaceName := formatNamespaceName(in.TaskId)
 	ingressName := formatIngressName(in.TaskId)
+	deplName := formatDeployName(in.TaskId)
 
 	out = in
+
+	deploy, err := kubeClient.AppsV1().Deployments(deplName).Get(context.TODO(), deplName, metav1.GetOptions{})
+	if err != nil {
+		log.Println("checkDeploymentReady error:")
+		log.Println(err.Error())
+		// 出错直接返回，状态不变
+		return out
+	}
+
+	if deploy.Status.AvailableReplicas < 1 {
+		out.Url = ""
+		out.State = "creating"
+		log.Printf("deploy AvailableReplicas=%v", deploy.Status.AvailableReplicas)
+		return out
+	}
 
 	ingress, err := kubeClient.NetworkingV1().Ingresses(namespaceName).Get(
 		context.TODO(), ingressName, metav1.GetOptions{})
