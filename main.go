@@ -37,7 +37,7 @@ func main() {
 				return
 			}
 
-			//检查是否以创建
+			//检查是否已创建
 			wsModel1 := repo.GetWorkspaceByTask(workspaceCreate.Task.Id)
 			if wsModel1.TaskId != "" {
 				//已有则检查状态，非 closed 则直接返回，如果是 closed 状态则需要重启
