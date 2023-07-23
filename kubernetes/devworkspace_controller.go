@@ -1087,7 +1087,7 @@ func newIngress(devWorkspace *ezv1.DevWorkspace) *networkingv1.Ingress {
 		Spec: networkingv1.IngressSpec{
 			Rules: []networkingv1.IngressRule{
 				{
-					Host: fmt.Sprintf("workspace-%v.124.156.125.152.nip.io/?folder=/home/workspace", devWorkspace.Spec.Task.Tid),
+					Host: fmt.Sprintf("workspace-%v.124.156.125.152.nip.io", devWorkspace.Spec.Task.Tid),
 					IngressRuleValue: networkingv1.IngressRuleValue{
 						HTTP: &networkingv1.HTTPIngressRuleValue{
 							Paths: []networkingv1.HTTPIngressPath{
@@ -1242,7 +1242,7 @@ func QueryWorkspaceStatus(in *repo.Workspace) (out *repo.Workspace) {
 	for _, ing := range ingress.Status.LoadBalancer.Ingress {
 		// 有任意一个ip则表示ingress就绪了
 		if ing.IP != "" || ing.Hostname != "" {
-			out.Url = ingress.Spec.Rules[0].Host
+			out.Url = ingress.Spec.Rules[0].Host + "/?folder=/home/workspace"
 			out.State = "ready"
 			log.Printf("ingress state=%v", out.State)
 			return out
