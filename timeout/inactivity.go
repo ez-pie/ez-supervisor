@@ -15,7 +15,7 @@ import (
 var globalWorkspaceList []inactivityIdleManagerEntry
 
 // TODO 调整时间
-var idleTimeout = 10 * 60 * time.Second
+var idleTimeout = 365 * 24 * 60 * 60 * time.Second
 var stopRetryPeriod = 10 * time.Second
 
 // InactivityIdleManager manage all workspace
