@@ -1230,7 +1230,7 @@ func QueryWorkspaceStatus(in *repo.Workspace) (out *repo.Workspace) {
 
 	out = in
 
-	deploy, err := kubeClient.AppsV1().Deployments(deplName).Get(context.TODO(), deplName, metav1.GetOptions{})
+	deploy, err := kubeClient.AppsV1().Deployments(namespaceName).Get(context.TODO(), deplName, metav1.GetOptions{})
 	if err != nil {
 		log.Println("checkDeploymentReady error:")
 		log.Println(err.Error())
